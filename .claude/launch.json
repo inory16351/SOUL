@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-proto",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["web-proto/server.mjs"],
+      "port": 5173
+    }
+  ]
+}

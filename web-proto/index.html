@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171b1c">
+  <title>Morrow-07 | The Wanderer</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Interactive hooded wanderer robot"></canvas>
+  <header><a class="mark" href="./" aria-label="Morrow-07 home">M07<span> / </span> MOTION LAB</a><div class="build">PROCEDURAL STUDY <span>001</span></div></header>
+  <aside id="panel">
+    <div class="eyebrow"><i></i> CHARACTER / COMBAT</div>
+    <h1>MORROW<br><em>UNIT 07</em></h1>
+    <p class="intro">No memory. Only the road ahead.</p>
+    <div class="state-row"><span>LIVE STATE</span><strong id="state">IDLE</strong><span id="chain">01 / 03</span></div>
+    <div class="timeline"><div id="progress"></div><b></b></div>
+    <div class="section-label">MOVE LIBRARY <span>CLICK TO PREVIEW</span></div>
+    <div id="moves"></div>
+    <div class="speed-label"><label for="speed">PLAYBACK SPEED</label><output id="speed-value">1.00×</output></div>
+    <input id="speed" type="range" min="0.05" max="1.5" step="0.05" value="1" aria-label="Playback speed">
+    <div class="options"><label><input id="skeleton" type="checkbox"> Joint skeleton</label><label><input id="colliders" type="checkbox"> Colliders</label><button id="camera">↗ CAMERA <kbd>C</kbd></button></div>
+    <details><summary>조작 <span>+</span></summary><div class="controls"><span><kbd>우클릭</kbd> 이동</span><span><kbd>A</kbd> 연속 베기 (3타)</span><span><kbd>Q</kbd> 회오리</span><span><kbd>W</kbd> 레이저 파동</span><span><kbd>E</kbd> 반격</span><span><kbd>R</kbd> 칼날 폭풍</span><span><kbd>SPACE</kbd> 대쉬</span><span><kbd>F</kbd> 점프</span><span><kbd>휠</kbd> 줌 · <kbd>C</kbd> 측면 카메라</span><span><kbd>H</kbd> 피격 테스트</span></div></details>
+  </aside>
+  <div class="subject-label"><span>01</span><div>THE WANDERER<small>RIGID MESH · PROCEDURAL RIG · TWO-HAND IK</small></div></div>
+  <div id="cue"><span class="cue-dot"></span><span id="cue-text">Press J to strike. Press again late to chain.</span></div>
+  <footer><span>NO MODELS. NO MOCAP. <b>ALL MOTION.</b></span><div><span id="view-name">TOP-DOWN</span><i></i> THREE.JS / 0.160.0</div></footer>
+  <div id="loading"><div class="loading-mark">M07</div><span>WAKING THE WANDERER</span></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
