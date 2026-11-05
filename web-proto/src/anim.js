@@ -159,13 +159,15 @@ export class Animator {
     if (name === 'idle') this.feet = Object.fromEntries(['L', 'R'].map(s => [s, { target: ankles[s].clone(), start: ankles[s].clone(), wasStance: true, moving: true }]));
     else this.mfeet = Object.fromEntries(['L', 'R'].map(s => [s, { pos: ankles[s].clone(), yaw: yawOf(this.j[s + 'foot'].getWorldQuaternion(new Q4())) }]));
     if (name !== 'idle') this.events.willPlay?.(name);
-    this.name = name; this.time = 0; this.blend = 0; this.buffered = false; this.impacted = false; this.startYaw = this.character.root.rotation.y; this.prevTipL = null;
+    this.name = name; this.time = 0; this.blend = 0; this.buffered = false; this.impacted = false;
+    this.startYaw = this.pendingYaw ?? this.character.root.rotation.y; this.pendingYaw = undefined;
+    this.yawOffset = THREE.MathUtils.euclideanModulo(this.character.root.rotation.y - this.startYaw + Math.PI, Math.PI * 2) - Math.PI; this.prevTipL = null;
     this.velocity.set(0, 0, 0); this.speed = 0;
     if (name === 'heavyCharge') this.charge = 0;
     if (name === 'roll' || name === 'backstep') this.events.dust?.();
     return true;
   }
-  resetFeet() { this.feet = {}; this.mfeet = {}; }
+  resetFeet() { this.feet = {}; this.mfeet = {}; this.resetSpring(); }
   light() {
     if (this.name === 'jump' && this.time > .16 && this.time < .80) return this.play('flurry');
     if (!this.busy) return this.play('light1');
@@ -174,7 +176,7 @@ export class Animator {
   update(dt, direction, running) {
     this.worldTime += dt; this.dt = dt;
     if (this.busy) this.updateMove(dt); else this.locomotion(dt, direction, running);
-    this.blend = Math.min(1, this.blend + dt / (this.move?.blend ?? .20));
+    this.blend = Math.min(1, this.blend + dt / Math.max(.12, this.move?.blend ?? .22));
     if (dt > 0) this.dynamics(dt);
     this.apply();
     if (this.busy) this.moveLegs(dt);
@@ -193,7 +195,8 @@ export class Animator {
     if (this.name === 'heavyCharge') this.charge = Math.min(1, this.time / move.duration);
     const distance = rootAt(move, this.time) - rootAt(move, previous);
     this.character.root.position.add(new V3(0, 0, distance).applyAxisAngle(up, this.startYaw));
-    if (move.yaw) this.character.root.rotation.y = this.startYaw + curveAt(move.yaw, this.time) * rad;
+    if (move.yaw) this.character.root.rotation.y = this.startYaw + curveAt(move.yaw, this.time) * rad + this.yawOffset * (1 - smooth(Math.min(1, this.time / .14)));
+    else { const r = this.character.root, dy = THREE.MathUtils.euclideanModulo(this.startYaw - r.rotation.y + Math.PI, Math.PI * 2) - Math.PI; r.rotation.y += dy * damp(26, dt); }
     const keys = this.compiled[this.name]; let i = 0; while (i < keys.length - 2 && this.time > keys[i + 1].t) i++;
     const k0 = keys[Math.max(0, i - 1)], k1 = keys[i], k2 = keys[i + 1], k3 = keys[Math.min(keys.length - 1, i + 2)];
     const t = ease(THREE.MathUtils.clamp((this.time - k1.t) / (k2.t - k1.t), 0, 1), k2.ease);
@@ -216,10 +219,11 @@ export class Animator {
   }
   locomotion(dt, direction, running) {
     const root = this.character.root, previousSpeed = this.speed, targetSpeed = direction.lengthSq() > .01 ? (running ? 4.2 : 1.65) * Math.min(1, direction.length()) : 0;
-    const desired = direction.lengthSq() > 1e-6 ? direction.clone().normalize().multiplyScalar(targetSpeed) : new V3(); this.velocity.lerp(desired, damp(10, dt));
+    const desired = direction.lengthSq() > 1e-6 ? direction.clone().normalize().multiplyScalar(targetSpeed) : new V3();
+    this.accel ??= new V3(); { const w = 2 * Math.PI * 1.7; this.accel.addScaledVector(desired.clone().sub(this.velocity).multiplyScalar(w * w).addScaledVector(this.accel, -2 * w), dt); this.velocity.addScaledVector(this.accel, dt); }
     this.speed = this.velocity.length(); if (this.speed < .015) { this.velocity.set(0, 0, 0); this.speed = 0; }
     root.position.addScaledVector(this.velocity, dt);
-    if (direction.lengthSq() > .01) { const targetYaw = Math.atan2(direction.x, direction.z), delta = THREE.MathUtils.euclideanModulo(targetYaw - root.rotation.y + Math.PI, Math.PI * 2) - Math.PI; root.rotation.y += delta * damp(13, dt); }
+    if (direction.lengthSq() > .01) { const targetYaw = Math.atan2(direction.x, direction.z), delta = THREE.MathUtils.euclideanModulo(targetYaw - root.rotation.y + Math.PI, Math.PI * 2) - Math.PI; root.rotation.y += delta * damp(10, dt); }
     this.phase += this.speed * dt * (running ? 4.3 : 5.4);
     const amount = Math.min(1, this.speed / 1.65), still = 1 - amount, wave = Math.sin(this.phase), b = this.breath();
     const accel = dt ? THREE.MathUtils.clamp((this.speed - previousSpeed) / dt, -4, 5) : 0;
@@ -254,7 +258,7 @@ export class Animator {
     this.time = 0; this.name = this.speed > .15 ? (running ? 'run' : 'walk') : 'idle';
   }
   apply() {
-    const w = smooth(this.blend);
+    const b = this.blend, w = b * b * b * (b * (b * 6 - 15) + 10);          // smootherstep: eased in and out
     for (const [name, q] of Object.entries(this.pose)) this.j[name].quaternion.copy(this.from?.[name] ?? q).slerp(q, w);
     for (const n of FK_CLAMP) this.stat('limit ' + n, clampJoint(n, this.j[n].quaternion));
     const body = this.fromBody ? this.fromBody.clone().lerp(this.body, w) : this.body;
@@ -371,6 +375,7 @@ export class Animator {
       for (const v of [gu, gf, gd]) v.transformDirection(frame);
       const w = busy ? smooth(this.blend) : 1;
       slerpDir(u, gu, w); slerpDir(f, gf, w); slerpDir(d, gd, w);
+      this.springDirs(u, d, dt); f.copy(d);
     }
     if (busy && move.yaw) { const om = (curveAt(move.yaw, this.time + 1 / 240) - curveAt(move.yaw, this.time)) * 240 * rad; vel.add(new V3(0, om, 0).cross(S.clone().addScaledVector(u, UPPER).addScaledVector(f, FORE).addScaledVector(d, BLADE_END).sub(root.position))); }
     limitAngle(d, u, 150); f.copy(d);
@@ -399,22 +404,45 @@ export class Animator {
     const striking = busy && move.active && this.time >= move.active[0] - .05 && this.time <= move.active[1] + .05;
     if (this.smoothU && !busy && dt > 0) { const k = damp(16, dt); slerpDir(this.smoothU, u, k); slerpDir(this.smoothD, d, k); u.copy(this.smoothU); d.copy(this.smoothD); f.copy(d); }
     this.smoothU = u.clone(); this.smoothD = d.clone();
-    this.aimBone(j.RupperArm, u);
-    this.aimBone(j.Rforearm, f);
-    this.aimBone(j.Rhand, d);   // wrist locked straight: the blade continues the forearm
-    // Edge leads the cut: roll the wrist housing about the blade so the edge (+X of the blade)
-    // faces the direction of travel; at rest the edge faces down/forward.
-    const hand = j.Rhand, perp = v => v.clone().addScaledVector(d, -v.dot(d));
+    // ---- Hinge-consistent arm ----
+    // The elbow is a real hinge: it only bends one way and neither bone twists about its own
+    // axis (that read as twisted muscles). The hinge axis X = d x u; if a key would make the
+    // elbow bend backwards while passing through straight, the upper arm is moved to the
+    // allowed side instead (the blade direction, i.e. the cut, is kept).
+    {
+      const rq = root.quaternion, rqi = rq.clone().invert();
+      let h = d.clone().cross(u); const bend = u.angleTo(d), prev = this.hingeL ? this.hingeL.clone().applyQuaternion(rq) : null;
+      if (h.length() < .17) h = prev ? prev.clone() : new V3(1, 0, 0).applyQuaternion(root.quaternion);
+      else {
+        h.normalize();
+        if (prev && h.dot(prev) < 0 && bend < .75) {
+          h = prev.clone().addScaledVector(d, -prev.dot(d)).normalize();
+          u.copy(d).applyAxisAngle(h, Math.max(bend, .12)).normalize();
+        }
+      }
+      h.addScaledVector(u, -h.dot(u)).normalize();
+      // a nearly straight elbow defines its hinge poorly: hold the previous twist there
+      const trust = THREE.MathUtils.smoothstep(bend, 12 * rad, 40 * rad);
+      this.hinge = prev ? prev.clone().lerp(h, damp(26 * trust, dt || .016)).normalize() : h.clone();
+      this.hingeL = this.hinge.clone().applyQuaternion(rqi);
+    }
+    const H = this.hinge.clone().addScaledVector(u, -this.hinge.dot(u)).normalize();
+    const Hd = H.clone().addScaledVector(d, -H.dot(d)).normalize();
+    this.setBasis(j.RupperArm, u, H);
+    this.setBasis(j.Rforearm, d, Hd);
+    // Edge roll: the hand housing rolls about the blade so the edge leads the cut, but only
+    // within +-100 degrees of the forearm and at a limited rate (no sudden 180-degree wrench).
+    const perp = v => v.clone().addScaledVector(d, -v.dot(d));
     const restEdge = perp(new V3(0, -1, 0)); if (restEdge.lengthSq() < 1e-6) restEdge.copy(perp(new V3(0, 0, 1)));
     restEdge.normalize();
     let target = perp(vel); const speed = target.length();
     target = speed > .05 ? target.normalize().lerp(restEdge, THREE.MathUtils.clamp(1 - speed / 3, 0, 1)) : restEdge.clone();
-    if (target.lengthSq() < 1e-6) target.copy(restEdge);
-    this.edge = this.edge ? this.edge.lerp(target.normalize(), damp(25, dt || .016)) : target.normalize();
-    this.character.sword.updateWorldMatrix(true, false);
-    const edgeNow = perp(new V3(1, 0, 0).applyQuaternion(this.character.sword.getWorldQuaternion(new Q4()))).normalize(), want = perp(this.edge).normalize();
-    const ang = Math.atan2(edgeNow.clone().cross(want).dot(d), edgeNow.dot(want));
-    hand.quaternion.multiply(new Q4().setFromAxisAngle(new V3(0, 1, 0), -ang));
+    if (target.lengthSq() < 1e-6) target.copy(restEdge); target.normalize();
+    let phi = Math.atan2(Hd.clone().cross(target).dot(d), Hd.dot(target));
+    phi = THREE.MathUtils.clamp(phi, -100 * rad, 100 * rad);
+    const maxStep = 900 * rad * (dt || .016);
+    this.roll = (this.roll ?? 0) + THREE.MathUtils.clamp((phi - (this.roll ?? 0)) * damp(18, dt || .016), -maxStep, maxStep);
+    this.setBasis(j.Rhand, d, Hd.clone().applyAxisAngle(d, this.roll));
     this.character.root.updateMatrixWorld(true);
     this.dbg = { Ut, Ft, Dt, u: u.clone(), f: f.clone(), d: d.clone() };
     const inv = root.matrixWorld.clone().invert(), tipL = this.character.bladeTip.getWorldPosition(new V3()).applyMatrix4(inv);
@@ -442,6 +470,23 @@ export class Animator {
   slashInfo() {
     const root = this.character.root, v = this.tipVel ?? new V3(), speed = v.length();
     return { center: this.j.RupperArm.getWorldPosition(new V3()), dir: this.dbg?.d?.clone() ?? new V3(0, 0, 1), vel: speed > 1e-6 ? v.clone().transformDirection(root.matrixWorld).multiplyScalar(speed) : new V3() };
+  }
+  // Critically damped 2nd-order follow (≈11 Hz): the arm accelerates out of every key and
+  // decelerates into it instead of changing speed instantly.
+  springDirs(u, d, dt) {
+    if (!(dt > 0)) return;
+    const S = this.armSpring ??= { u: u.clone(), d: d.clone(), vu: new V3(), vd: new V3() }, w = 2 * Math.PI * 11;
+    for (const [x, v, target] of [[S.u, S.vu, u], [S.d, S.vd, d]]) {
+      v.addScaledVector(target.clone().sub(x).multiplyScalar(w * w).addScaledVector(v, -2 * w), dt); x.addScaledVector(v, dt).normalize(); target.copy(x);
+    }
+  }
+  resetSpring() { this.armSpring = null; this.accel = null; this.hinge = null; this.hingeL = null; this.roll = 0; }
+  // Bone frame from its direction (bone runs along local -Y) and the hinge axis (local X).
+  setBasis(joint, dir, xAxis) {
+    const Y = dir.clone().negate().normalize(), X = xAxis.clone().addScaledVector(Y, -xAxis.dot(Y)).normalize(), Z = X.clone().cross(Y).normalize();
+    const world = new Q4().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+    joint.parent.updateWorldMatrix(true, false);
+    joint.quaternion.copy(joint.parent.getWorldQuaternion(new Q4()).invert().multiply(world)); joint.updateWorldMatrix(false, true);
   }
   aimBone(joint, dir) {
     joint.updateWorldMatrix(true, false);

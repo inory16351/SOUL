@@ -35,10 +35,11 @@ const lungeL = { Lthigh: [-50, 0, 4], Lshin: [54, 0, 0], Lfoot: [-10, 0, 0], Rth
 const deepR = { Rthigh: [-72, 0, -4], Rshin: [72, 0, 0], Rfoot: [-14, 0, 0], Lthigh: [40, 0, 6], Lshin: [16, 0, 0], Lfoot: [30, 0, 0] };
 const tucked = { Lthigh: [-70, 0, 10], Rthigh: [-60, 0, -10], Lshin: [110, 0, 0], Rshin: [110, 0, 0] };
 
-// after the descending cut: weight on the right (front) foot, torso turned left and forward
-const l1Hold = { pelvis: [12, -32, 0], spine: [8, -10, 0], chest: [8, -30, 0], neck: [-4, 16, 0], head: [-8, 16, 0], ...lungeR, ...L_back };
+// after the horizontal backhand: right foot forward, body turned right, arm out to the right rear
+const l1Hold = { pelvis: [10, 30, 0], spine: [6, 12, 0], chest: [4, 38, 0], neck: [-2, -18, 0], head: [-6, -18, 0], ...lungeR, ...L_back };
 // after the rising cut: left foot forward, torso turned right and extended upward
-const l2Hold = { pelvis: [8, 36, 0], spine: [6, 12, 0], chest: [4, 42, 0], neck: [-2, -18, 0], head: [-6, -18, 0], ...lungeL, ...L_out };
+// after the wide forehand sweep: right foot forward, body turned left, arm extended to the left front
+const l2Hold = { pelvis: [12, -30, 0], spine: [8, -10, 0], chest: [6, -38, 0], neck: [-2, 16, 0], head: [-6, 16, 0], ...lungeR, ...L_back };
 const spinLean = { pelvis: [10, 0, -10], spine: [6, 0, -8], chest: [6, 0, -10], neck: [0, 0, 8], head: [-4, 0, 6], Rthigh: [-30, 0, -10], Rshin: [44, 0, 0], Lthigh: [-8, 0, 12], Lshin: [44, 0, 0], ...L_out };
 const l3Hold = { pelvis: [14, -28, 0], spine: [8, -10, 0], chest: [8, -30, 0], neck: [-4, 16, 0], head: [-8, 16, 0], ...lungeR, ...L_back };
 const charge = { pelvis: [8, 48, 0], spine: [4, 10, 0], chest: [4, 22, 0], neck: [0, -28, 0], head: [-6, -30, 0], Rthigh: [-30, 0, -3], Rshin: [44, 0, 0], Lthigh: [20, 0, 5], Lshin: [36, 0, 0], ...L_front };
@@ -49,35 +50,42 @@ const landHold = { pelvis: [18, -10, 0], spine: [12, 0, 0], chest: [10, 0, 0], n
 const finisher = { pelvis: [10, -22, 0], spine: [6, -6, 0], chest: [6, -26, 0], neck: [0, 14, 0], head: [-4, 14, 0], ...lungeR, ...L_back };
 
 export const moves = {
+  // Body-driven horizontal cut: the whole body coils left with the arm already EXTENDED in front,
+  // then unwinds ~135 deg while the straight arm + blade sweep a wide level arc at shoulder height.
+  // The swing comes from the body, not from unfolding the elbow, so the reach is arm + blade.
   light1: {
-    label: 'Falling cut', key: 'J', duration: .78, blend: .08, active: [.20, .33], impact: .27, buffer: [.30, .74], chain: 'light2', chainAt: .48,
-    steps: [['R', .10, .24], ['L', .46, .68]],
-    root: [[0, 0], [.12, 0], [.25, .38], [.34, .42], [.78, .42]],
+    label: 'Crescent sweep', key: 'A', duration: .80, blend: .08, active: [.17, .40], impact: .26, buffer: [.30, .76], chain: 'light2', chainAt: .50,
+    yaw: [[0, 0], [.14, -70], [.20, -75], [.36, 60], [.52, 60], [.80, 0]],
+    steps: [['R', .16, .30], ['L', .50, .72]],
+    root: [[0, 0], [.16, 0], [.30, .50], [.38, .58], [.80, .58]],
     keys: [
       key(0),
-      key(.08, { pelvis: [0, 14, 0], spine: [-4, 6, 0], chest: [-6, 14, 0], neck: [0, -8, 0], head: [0, -8, 0], ...L_front }, [0, .03, -.03]),
-      key(.16, { pelvis: [-2, 30, 0], spine: [-6, 10, 0], chest: [-8, 28, 0], neck: [2, -16, 0], head: [0, -16, 0], Rthigh: [-30, 0, -3], Rshin: [42, 0, 0], ...L_front }, [.02, .05, -.05], 'in'),
-      key(.21, { pelvis: [6, 6, 0], spine: [2, 2, 0], chest: [0, 8, 0], neck: [0, -4, 0], head: [-2, -4, 0], Rthigh: [-46, 0, -4], Rshin: [50, 0, 0], Lthigh: [20, 0, 5], Lshin: [26, 0, 0], ...L_rest }, [0, -.04, .05]),
-      key(.25, { pelvis: [12, -24, 0], spine: [8, -8, 0], chest: [8, -22, 0], neck: [-4, 12, 0], head: [-8, 12, 0], ...lungeR, ...L_back }, [-.02, -.13, .10], 'out'),
-      key(.31, l1Hold, [-.03, -.15, .11]),
-      key(.48, l1Hold, [-.03, -.14, .10]),
-      key(.64, { pelvis: [6, -6, 0], chest: [4, -4, 0], Lthigh: [0, 0, 5], Lshin: [38, 0, 0] }, [0, -.05, .03]),
-      key(.78),
+      key(.14, { pelvis: [4, -8, 0], spine: [0, -8, 0], chest: [-2, -26, 0], neck: [0, 16, 0], head: [-4, 16, 0], ...L_back }, [0, .02, -.03], 'in'),
+      key(.20, { pelvis: [4, -10, 0], spine: [0, -10, 0], chest: [-2, -30, 0], neck: [0, 18, 0], head: [-4, 18, 0], Rthigh: [-28, 0, -3], Rshin: [40, 0, 0], ...L_back }, [.02, .02, -.04]),
+      key(.27, { pelvis: [6, 14, 0], spine: [2, 6, 0], chest: [0, 22, 0], neck: [0, -10, 0], head: [-4, -10, 0], ...lungeR, ...L_out }, [0, -.08, .12], 'out'),
+      key(.36, { ...l1Hold, pelvis: [6, 20, 0], spine: [2, 10, 0], chest: [0, 34, 0] }, [0, -.10, .13]),
+      key(.52, { ...l1Hold, pelvis: [6, 20, 0], spine: [2, 10, 0], chest: [0, 34, 0] }, [0, -.09, .12]),
+      key(.66, { pelvis: [6, 8, 0], chest: [4, 10, 0], Lthigh: [0, 0, 5], Lshin: [38, 0, 0] }, [0, -.05, .03]),
+      key(.80),
     ],
   },
+  // Wide forehand sweep. From where hit 1 ended (low left) the blade is drawn back low across
+  // the front to the right rear (arm stays OUTSIDE the body), the body coils right, then the
+  // extended arm sweeps right -> left at waist-chest height while the whole body turns ~75 deg.
   light2: {
-    label: 'Backhand sweep', key: 'A²', duration: .80, blend: .07, active: [.15, .35], impact: .24, buffer: [.28, .76], chain: 'light3', chainAt: .50,
-    steps: [['L', .08, .22], ['R', .50, .70]],
-    root: [[0, 0], [.08, 0], [.22, .30], [.30, .34], [.80, .34]],
+    label: 'Wide sweep', key: 'A²', duration: .82, blend: .08, active: [.20, .38], impact: .27, buffer: [.30, .78], chain: 'light3', chainAt: .52,
+    yaw: [[0, 0], [.10, 15], [.20, 30], [.34, -45], [.52, -45], [.82, 0]],
+    steps: [['R', .14, .28], ['L', .52, .74]],
+    root: [[0, 0], [.12, 0], [.30, .62], [.40, .72], [.82, .72]],
     keys: [
       key(0, l1Hold, [-.03, -.14, .10]),
-      key(.10, { pelvis: [14, -46, 0], spine: [10, -14, 0], chest: [8, -42, 0], neck: [-4, 20, 0], head: [-6, 20, 0], ...lungeR, Lthigh: [-14, 0, 5], Lshin: [46, 0, 0], ...L_front }, [-.02, -.17, .05], 'in'),
-      key(.16, { pelvis: [14, -48, 0], spine: [10, -14, 0], chest: [8, -44, 0], neck: [-4, 22, 0], head: [-6, 22, 0], ...lungeR, Lthigh: [-24, 0, 5], Lshin: [44, 0, 0], ...L_front }, [-.02, -.18, .06]),
-      key(.22, { pelvis: [10, 18, 0], spine: [6, 8, 0], chest: [4, 26, 0], neck: [-2, -12, 0], head: [-6, -12, 0], ...lungeL, ...L_out }, [.02, -.14, .10], 'out'),
-      key(.30, l2Hold, [.03, -.15, .11]),
-      key(.48, l2Hold, [.03, -.14, .10]),
-      key(.64, { pelvis: [6, 4, 0], chest: [4, 8, 0], Rthigh: [-8, 0, -3], Rshin: [40, 0, 0] }, [0, -.05, .03]),
-      key(.80),
+      key(.12, { pelvis: [10, 18, 0], spine: [6, 8, 0], chest: [4, 22, 0], neck: [0, -10, 0], head: [-4, -10, 0], Rthigh: [-24, 0, -3], Rshin: [46, 0, 0], ...L_front }, [0, -.16, .02], 'in'),
+      key(.20, { pelvis: [10, 26, 0], spine: [6, 10, 0], chest: [4, 30, 0], neck: [0, -14, 0], head: [-4, -14, 0], Rthigh: [-34, 0, -3], Rshin: [52, 0, 0], ...L_front }, [0, -.18, .04]),
+      key(.28, { pelvis: [12, -18, 0], spine: [8, -6, 0], chest: [6, -22, 0], neck: [-2, 10, 0], head: [-6, 10, 0], ...lungeR, ...L_back }, [-.02, -.20, .14], 'out'),
+      key(.36, l2Hold, [-.03, -.20, .15]),
+      key(.52, l2Hold, [-.03, -.16, .12]),
+      key(.68, { pelvis: [6, -6, 0], chest: [4, -4, 0], Lthigh: [-6, 0, 5], Lshin: [40, 0, 0] }, [0, -.06, .03]),
+      key(.82),
     ],
   },
   light3: {
@@ -198,39 +206,37 @@ export const moves = {
 export const IDLE_GRIP = [[.25, -.92, .30], [.05, -.35, .94], [-.15, .30, .94]];
 const IDLE_UD = [[.25, -.92, .30], [-.15, .30, .94]];
 const A = (t, u, f, d) => [t, u, f, d], idleA = t => [t, ...IDLE_GRIP];
-const L1_END = [[.10, -.58, .81], [-.35, -.62, .70], [-.70, -.57, .43]];
+const L1_END = [[.85, -.05, .52], [.90, -.05, .42], [.90, -.05, .42]];
 const SWEEP_END = [[.85, -.30, -.40], [.70, -.30, -.65], [.70, -.30, -.65]];
+const L2_END = [[-.55, -.12, .83], [-.90, -.08, .43], [-.90, -.08, .43]];
 const CHARGE = [[.38, -.66, -.65], [.35, -.63, -.69], [.40, -.33, -.86]];
 const OUT = [[.90, -.40, .15], [.90, -.42, .12], [.88, -.45, .10]];
 const ARM_GUIDES = {
-  // diagonal descending cut (upper right -> lower left)
+  // arm stays extended (elbow ~10-15 deg) the whole time; directions are relative to the body,
+  // the yaw curve turns the body -75 -> +60 deg, so the straight arm sweeps a wide level arc
   light1: [idleA(0),
-    A(.05, [.60, -.40, .20], [.30, .10, .95], [.10, .85, .50]),
-    A(.09, [.60, .10, .05], [.15, .75, .60], [-.05, .95, -.30]),
-    A(.16, [.58, .50, -.15], [0, .98, .15], [-.25, .30, -.92]),       // cocked over the right shoulder
-    A(.20, [.55, .25, .55], [.10, .40, .91], [.05, .90, -.35]),       // hands lead, blade still lags
-    A(.225, [.48, .05, .87], [.05, .05, 1], [-.15, .55, .82]),        // wrist releases
-    A(.25, [.35, -.20, .92], [0, -.35, .94], [-.45, -.45, .77]),      // contact
-    A(.31, L1_END[0], L1_END[1], L1_END[2]),                          // follow-through to the left hip
-    A(.48, [.10, -.60, .80], [-.35, -.64, .68], [-.70, -.58, .41]),
-    A(.64, [.30, -.85, .40], [0, -.55, .83], [-.25, -.10, .96]),
-    idleA(.78)],
-  // rising diagonal (lower left -> upper right), flows out of the first cut
-  // backhand horizontal sweep at waist-chest height, outward from the body (left -> right)
-  light2: [A(0, L1_END[0], L1_END[1], L1_END[2]),
-    A(.10, [-.30, -.40, .87], [-.80, -.15, -.58], [-.80, -.15, -.58]),
-    A(.16, [-.35, -.35, .87], [-.78, -.10, -.62], [-.78, -.10, -.62]),     // coiled far back across the body
-    A(.19, [-.30, -.25, .92], [-.75, -.15, .64], [-.75, -.15, .64]),
-    A(.22, [.20, -.25, .95], [0, -.18, .98], [0, -.18, .98]),
-    A(.25, [.75, -.25, .62], [.80, -.20, .56], [.80, -.20, .56]),         // contact, arm straight
-    A(.29, [.92, -.28, .10], [.95, -.22, -.15], [.95, -.22, -.15]),
-    A(.34, SWEEP_END[0], SWEEP_END[1], SWEEP_END[2]),                     // follow-through well behind the right side
-    A(.48, [.85, -.32, -.40], [.70, -.32, -.64], [.70, -.32, -.64]),
-    A(.56, [.70, -.55, .05], [.80, -.45, .10], [.80, -.45, .10]),
-    A(.64, [.45, -.80, .40], [.40, -.45, .80], [.40, -.45, .80]),
+    A(.07, [-.10, -.45, .89], [-.40, -.25, .88], [-.40, -.25, .88]),
+    A(.14, [-.35, -.05, .94], [-.55, -.02, .83], [-.55, -.02, .83]),     // extended in front, body coiled left
+    A(.20, [-.36, -.04, .93], [-.56, -.01, .83], [-.56, -.01, .83]),
+    A(.26, [.30, -.05, .95], [.40, -.05, .92], [.40, -.05, .92]),        // contact: body unwinding, arm straight
+    A(.36, L1_END[0], L1_END[1], L1_END[2]),                              // body turned right, arm out to the right
+    A(.52, [.85, -.07, .52], [.90, -.07, .43], [.90, -.07, .43]),
+    A(.66, [.60, -.60, .50], [.55, -.45, .70], [.55, -.45, .70]),
     idleA(.80)],
+  // wide forehand sweep: elbow and wrist stay in front of / outside the chest the whole way
+  light2: [A(0, L1_END[0], L1_END[1], L1_END[2]),
+    A(.10, [.84, -.30, -.44], [.73, -.20, -.64], [.73, -.20, -.64]),      // already at the right rear: deepen the coil
+    A(.20, [.85, -.25, -.45], [.75, -.15, -.64], [.75, -.15, -.64]),
+    A(.23, [.92, -.15, .35], [.95, -.08, .30], [.95, -.08, .30]),
+    A(.26, [.35, -.12, .93], [.10, -.08, .99], [.10, -.08, .99]),        // contact in front
+    A(.29, [-.30, -.12, .95], [-.62, -.08, .78], [-.62, -.08, .78]),
+    A(.34, L2_END[0], L2_END[1], L2_END[2]),                              // follow-through to the left front
+    A(.50, [-.55, -.14, .82], [-.88, -.10, .46], [-.88, -.10, .46]),
+    A(.64, [.10, -.75, .65], [-.30, -.40, .86], [-.30, -.40, .86]),
+    idleA(.82)],
   // full-circle sweep: arm extended outward-down while the whole body spins once, closing cut across the front
-  light3: [A(0, SWEEP_END[0], SWEEP_END[1], SWEEP_END[2]),
+  light3: [A(0, L2_END[0], L2_END[1], L2_END[2]),
+    A(.07, [.30, -.80, .52], [.10, -.70, .71], [.10, -.70, .71]),
     A(.14, [.75, -.55, -.35], [.75, -.45, -.48], [.75, -.45, -.48]),
     A(.18, [.92, -.28, .25], [.92, -.25, .30], [.92, -.25, .30]),
     A(.46, [.92, -.28, .25], [.92, -.25, .30], [.92, -.25, .30]),
