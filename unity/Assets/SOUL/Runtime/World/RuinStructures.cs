@@ -527,6 +527,7 @@ namespace Soul
                 for(int i=0;i<5;i++) b.Box(V(-6.8f+i*.65f,.065f,-5.45f),V(.6f,.13f,.24f),C(Weathered));
                 RoomClutter(b,5.15f,-3.4f,roof,2);
             });
+            Detail(b, seed ^ 401, () => RuinDressing.Building(b, p, standing, tower));
             return Finish(b, p, tower ? "collapsed-tower" : "apartment-ruin", tower ? 14 : 7.8f);
         }
 
@@ -602,6 +603,7 @@ namespace Soul
             // Distinct inaccessible roof box, away from the access lane.
             Floor(b, p, length * .5f - 2, 1.3f, 2.2f, 2.2f, 5, 1, .35f);
             Solid(b, p, length * .5f - 2, 2.2f, 2.2f, .25f, roof, 1.25f);
+            Detail(b, seed ^ 409, () => RuinDressing.ShopRow(b, p, length, bay, shops));
             return Finish(b, p, "shop-row", Mathf.Max(length * .5f + .5f, 9.2f));
         }
 
@@ -649,6 +651,7 @@ namespace Soul
                     for(int side=-1;side<=1;side+=2)
                         b.Box(V(side*3.25f,deck+.007f,z),V(.08f,.012f,1.1f),C(0xaaa99a));
             });
+            Detail(b, seed ^ 419, () => RuinDressing.Overpass(b, p, start, end, deck, rampEnd, snap, stubStart));
             return Finish(b, p, "broken-overpass", length * .5f + .5f);
         }
 
@@ -696,6 +699,7 @@ namespace Soul
                     b.Beam(V(.2f+i*2.8f,top+.68f,6.25f),V(2.1f+i*2.8f,top+.68f,6.25f),.03f,.025f,3,C(Rust));
                 RoomClutter(b,6.7f,4.7f,5,1);
             });
+            Detail(b, seed ^ 421, () => RuinDressing.ParkingDeck(b, p, top));
             return Finish(b, p, "parking-deck", 9.3f);
         }
 
@@ -713,6 +717,7 @@ namespace Soul
             Solid(b, p, 2.1f, -.1f, .35f, .6f, 0, top + 2.2f);
             Rebar(b, V(.25f, top - .1f, 3), V(.5f, -.15f, 0), 3);
             Debris(b, p, 1.6f, -2.7f, 8);
+            Detail(b, seed ^ 431, () => RuinDressing.StairRuin(b, p, top));
             return Finish(b, p, "stair-ruin", 4.7f);
         }
 
