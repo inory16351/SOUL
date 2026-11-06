@@ -9,7 +9,7 @@ namespace Soul
     //   Right mouse: move     A: combo (aims at cursor)   Q cyclone  W laser wave  E counter
     //   R blade storm  Space dash  F jump  wheel zoom  1/2 summon hound/warden  0 clear  P passive
     //   C pause, '.' one frame while paused, V side camera, H get hit (test)
-    public class SoulGame : MonoBehaviour
+    public partial class SoulGame : MonoBehaviour
     {
         public const float BOUNDS = 18;
         static readonly Dictionary<string, float> DMG = new Dictionary<string, float> { { "light1", 18 }, { "light2", 18 }, { "light3", 24 }, { "heavy", 13 }, { "flurry", 11 }, { "counter", 40 }, { "jump", 0 } };
@@ -25,7 +25,9 @@ namespace Soul
         public PlayerState player = new PlayerState();
         public float timeScale = 1;
         float hitStop, lastHitAt = -10, realTime, ghostClock, cueUntil, hurtFlash; int kills;
-        bool paused; int stepFrames; Vector3? moveTarget; float? aimYaw; Vector3? previousTip; string lastName = "idle", cueText = "";
+        bool paused, showMap, fastTest;
+        /// F1: debug overlays (gate hints, owned parts, coordinates, map gate markers). Off = what a player sees.
+        public static bool debugHud; int stepFrames; Vector3? moveTarget; float? aimYaw; Vector3? previousTip; string lastName = "idle", cueText = "";
         readonly List<(float at, Action fn)> timers = new List<(float, Action)>();
         readonly Dictionary<Enemy, float> hitSet = new Dictionary<Enemy, float>();
         readonly Dictionary<KeyCode, float> ready = new Dictionary<KeyCode, float>();
@@ -62,12 +64,12 @@ namespace Soul
             laser = new LaserBlade(ch); face = new PixelFace(ch);
             anim.groundAt = (x, z) => WorldCollision.Floor(x, z, ch.root.position.y, .6f);
             secondary = new Secondary(ch, world);
-            enemies = new EnemyManager(world, vfx, Regions.WORLD_RADIUS)
+            enemies = new EnemyManager(world, vfx, Regions.ENEMY_BOUNDS)
             {
                 onPlayerHit = OnPlayerHit,
                 onImpact = (e, a, p) =>
                 {
-                    if (a.name == "slam") { vfx.Ring(Sim.FlatY(p, .03f), 1.7f); vfx.Dust(p, 1.8f); vfx.Burst(Sim.FlatY(p, .2f), 14, 1); }
+                    if (a.name == "slam" || a.name == "quake") { float k = a.radius / 2.5f; vfx.Ring(Sim.FlatY(p, .03f), 1.7f * k); vfx.Dust(p, 1.8f * k); vfx.Burst(Sim.FlatY(p, .2f), (int)(14 * k), k); }
                     else if (a.name == "lunge") vfx.Dust(e.pos, .9f);
                     else vfx.Dust(p, .7f);
                     if (Vector3.Distance(p, ch.root.position) < 8) cam.Shake(a.name == "slam" ? .1f : .04f);
@@ -79,6 +81,7 @@ namespace Soul
             open = new WorldStreamer(world); open.Update(ch.root.position, true);
             var sunGo = GameObject.Find("Sun"); atmo = new RegionAtmosphere(sunGo ? sunGo.GetComponent<Light>() : null, cam.camera);
             var map = GameObject.Find("Map"); if (map) foreach (var t in map.GetComponentsInChildren<Transform>(true)) { if (t.name == "dust sky") sky = t; if (t.name == "ruins skyline") t.gameObject.SetActive(false); }
+            ZoneInit(world); RopeInit(world);
             ch.UpdateWorld(); ch.Sync();
             cam.Update(1, ch.root.position);
         }
@@ -87,12 +90,13 @@ namespace Soul
         bool Invulnerable()
         {
             string n = anim.name; float t = anim.time;
-            return (n == "dash" && t < .34f) || (n == "roll" && t > .04f && t < .78f) || (n == "flurry" && t < 1.18f) || (n == "jump" && t > .2f && t < .85f);
+            return RopeTravel || (n == "dash" && t < .34f) || (n == "roll" && t > .04f && t < .78f) || (n == "flurry" && t < 1.18f) || (n == "jump" && t > .2f && t < .85f);
         }
         void PlayerDie()
         {
             player.alive = false; moveTarget = null; PlayMove("stagger"); face.Set("hurt", 2.2f); Cue("SYSTEM FAILURE · 재기동 중", 2.2f);
-            After(2.2f, () => { player.hp = player.max; player.alive = true; enemies.ClearNear(ch.root.position, 7); anim.Play("idle"); face.Set("happy", 1); Cue("재기동 완료", 1.2f); });
+            // reboot at the last pod you rested at (a lost boss fight resets the boss)
+            After(2.2f, () => { RespawnAtPod(); player.hp = player.max; player.alive = true; enemies.ClearNear(ch.root.position, 7); anim.Play("idle"); face.Set("happy", 1); Cue("재기동 완료 · " + restPod.name, 1.6f); });
         }
         void OnPlayerHit(float dmg, Vector3 from, Enemy enemy)
         {
@@ -100,7 +104,7 @@ namespace Soul
             if (Invulnerable()) { Cue("회피!", .6f); vfx.Flash(Sim.FlatY(ch.root.position, 1.1f), .7f); return; }
             if (anim.name == "counter" && anim.time >= .03f && anim.time <= .27f)
             {
-                enemy.ToStagger(1.4f); enemy.Damage(10, ch.root.position, true); face.Set("happy", .9f); Cue("반격!", .8f);
+                enemy.ToStagger(1.4f); enemy.Damage(10, ch.root.position, true); face.Set("wide", .9f); Cue("반격!", .8f);   // 놀람 = every successful counter
                 var p = ch.bladeBase.WorldPosition; vfx.Ring(p, 1.4f, true); vfx.Burst(p, 26, 1.3f); cam.Shake(.09f); hitStop = .1f; return;
             }
             player.hp = Mathf.Max(0, player.hp - dmg); hurtFlash = 1;
@@ -182,19 +186,39 @@ namespace Soul
         }
         void TogglePassive() { enemies.passive = !enemies.passive; Cue(enemies.passive ? "허수아비 모드: 몬스터가 공격하지 않음" : "몬스터 공격 켜짐", 1.4f); }
         void TogglePause() { paused = !paused; stepFrames = 0; }
+        void TogglePart(int id) { Parts.Toggle(id); Cue($"{Parts.Names[id]} {(Parts.Has(id) ? "장착" : "해제")} · 보유: {Parts.Owned()}", 1.6f); }
 
         void HandleInput()
         {
+            ropeHeld = Input.GetMouseButton(0);
+            if (!showMap && Input.GetMouseButtonDown(0)) { var c = cam.Pick(Input.mousePosition, ch.root.position.y); if (c.HasValue) FireRope(c.Value); }
+            if (RopeHolds) { if (Input.GetKeyDown(KeyCode.M)) showMap = !showMap; return; }   // on the rope: nothing else
             if (Input.GetKeyDown(KeyCode.A)) Attack();
             foreach (var k in COOLDOWN.Keys) if (Input.GetKeyDown(k)) Skill(k);
-            if (Input.GetKeyDown(KeyCode.Alpha1)) Summon("crawler");
-            if (Input.GetKeyDown(KeyCode.Alpha2)) Summon("warden");
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (shift) { for (int i = Parts.Rope; i <= Parts.LabKeys; i++) if (Input.GetKeyDown(KeyCode.Alpha0 + i)) TogglePart(i); }   // debug: Shift+1..6 toggles parts
+            else
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha1)) Summon("crawler");
+                if (Input.GetKeyDown(KeyCode.Alpha2)) Summon("warden");
+            }
             if (Input.GetKeyDown(KeyCode.Alpha0)) enemies.ClearAll();
             if (Input.GetKeyDown(KeyCode.P)) TogglePassive();
             if (Input.GetKeyDown(KeyCode.H)) GetHit();
             if (Input.GetKeyDown(KeyCode.C)) TogglePause();
             if (Input.GetKeyDown(KeyCode.Period) && paused) stepFrames++;
             if (Input.GetKeyDown(KeyCode.V)) cam.Toggle();
+            // T (like LoL Space): snap the view behind the character at once; it stays there (press again to re-snap)
+            if (Input.GetKeyDown(KeyCode.T)) cam.SnapYaw(Sim.WrapPi(ch.yaw + Mathf.PI));
+            if (Input.GetKeyDown(KeyCode.M)) showMap = !showMap;
+            if (Input.GetKeyDown(KeyCode.F1)) { debugHud = !debugHud; Cue(debugHud ? "디버그 표시 켜짐" : "디버그 표시 꺼짐", 1); }
+            if (Input.GetKeyDown(KeyCode.G)) RestAtPod();
+            if (Input.GetKeyDown(KeyCode.K)) TogglePurify();
+            if (showMap && Input.GetMouseButtonDown(0))
+            {   // debug: click the world map to teleport there
+                var r = MapRect(); var mp = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                if (r.Contains(mp)) MapClick(r, mp);
+            }
             float wheel = Input.mouseScrollDelta.y; if (Mathf.Abs(wheel) > .01f) cam.ZoomBy(-Mathf.Sign(wheel) * .08f);
             if (Input.GetMouseButton(1) && player.alive) { var p = cam.Pick(Input.mousePosition, ch.root.position.y); if (p.HasValue) { if (Input.GetMouseButtonDown(1)) vfx.Ring(Sim.FlatY(p.Value, .03f), .18f); moveTarget = p; } }
         }
@@ -263,8 +287,10 @@ namespace Soul
         public void WorldStep(float step, Vector3 input)
         {
             var before = ch.root.position;
-            anim.Update(step, input, true);
-            Vertical(step, before);
+            WaterStep(step);
+            anim.Update(step, RopeHolds ? Vector3.zero : input, true);
+            if (RopeTravel) RopeMove(step, before); else Vertical(step, before);
+            RopeTick(step); RopeArmPose();
             if (anim.name != lastName) { previousTip = null; lastName = anim.name; hitSet.Clear(); }
             var m = anim.move; bool active = m?.active != null && anim.time >= m.active[0] && anim.time <= m.active[1];
             if (active && !m.parry) { BladeHits(m); if (anim.time >= (m.Has(m.impact) ? m.impact : m.active[0]) - .02f) AreaHits(m); } else if (!active) previousTip = null;
@@ -277,7 +303,7 @@ namespace Soul
                 breakables.Hit(Sim.FlatY(c, .2f), Sim.FlatY(c, 1.2f), .9f, c);
             }
             player.pos = ch.root.position;
-            enemies.Update(step, player); breakables.Update(step);
+            enemies.Update(step, player); breakables.Update(step); pickups.Update(step, ch.root.position);
             if (step > 0)
             {
                 ghostClock -= step;
@@ -285,7 +311,7 @@ namespace Soul
                 bool spinning = (anim.name == "light3" || anim.name == "heavy" || anim.name == "flurry") && active;
                 if ((dashing || spinning) && ghostClock <= 0) { ch.Sync(); vfx.Afterimage(dashing ? 1 : .55f); ghostClock = dashing ? .03f : .07f; }
             }
-            Secondary.GroundY = ch.root.position.y; secondary.Update(step, anim.worldTime, anim.speed);
+            Secondary.GroundY = ch.root.position.y; if (!fastTest) secondary.Update(step, anim.worldTime, anim.speed);
             vfx.Update(step, active, anim.name == "heavyCharge" ? anim.charge : 0);
             laser.Update(step, active ? 1 : anim.name == "heavyCharge" ? .6f : 0);
         }
@@ -294,14 +320,14 @@ namespace Soul
             string n = anim.name;
             string state = n == "hit" || n == "stagger" ? "hurt" : n == "heavyCharge" ? "wide" : anim.busy && n != "jump" ? "focus" : "idle";
             face.Update(realDt, state);
-            open.Update(ch.root.position); atmo.Update(realDt, ch.root.position);
+            open.Update(ch.root.position); atmo.Update(realDt, ch.root.position); ZoneUpdate(realDt);
             // top-down cutaway: dither out world geometry above head height between the camera and the player
-            Shader.SetGlobalVector("_SoulCutCenter", (Vector4)Sim.ToUnity(ch.root.position + new Vector3(0, 0, 3)) + new Vector4(0, 0, 0, 9.5f));
+            Shader.SetGlobalVector("_SoulCutCenter", (Vector4)Sim.ToUnity(ch.root.position + Sim.ApplyAxisAngle(new Vector3(0, 0, 3), Vector3.up, cam.yaw)) + new Vector4(0, 0, 0, 9.5f));
             Shader.SetGlobalVector("_SoulCutParams", new Vector4(2.3f, 2.5f, 0, 0));
             ash.Update(realDt, ch.root.position);
             if (sky) sky.position = Sim.ToUnity(ch.root.position);
             hurtFlash = Mathf.Max(0, hurtFlash - realDt * 2.5f);
-            ch.Sync();
+            ch.Sync(); RopeVisuals();
             cam.Update(realDt, ch.root.position);
         }
 
@@ -330,20 +356,31 @@ namespace Soul
             return sb.ToString();
         }
         /// Synchronous simulation (seconds of 120 Hz substeps); action: "attack", "Q", "W", "E", "R", "Space", "F", "summon:crawler".
-        public void Simulate(float seconds, Vector3 input = default) { int n = Mathf.RoundToInt(seconds * 120); for (int i = 0; i < n; i++) WorldStep(1 / 120f, input); ch.Sync(); }
+        public void Simulate(float seconds, Vector3 input = default) { int n = Mathf.RoundToInt(seconds * 120); fastTest = true; for (int i = 0; i < n; i++) WorldStep(1 / 120f, input); fastTest = false; secondary.Reset(); ch.Sync(); }   // cloth skipped (7 ms / substep)
         /// Walk toward `target` (sim) for up to `seconds`; returns a trace "x,z,y" every 0.25 s (elevation tests).
         public string WalkTest(Vector3 target, float seconds, float jumpAtY = -1)
         {
-            var sb = new System.Text.StringBuilder(); int n = Mathf.RoundToInt(seconds * 120);
+            var sb = new System.Text.StringBuilder(); int n = Mathf.RoundToInt(seconds * 120); fastTest = true;   // cloth is 7 ms / substep; skipped here, reset after
             for (int i = 0; i < n; i++)
             {
                 var d = target - ch.root.position; d.y = 0; if (d.magnitude < .3f) break;
                 WorldStep(1 / 120f, d.normalized);
                 if (i % 30 == 0) sb.Append($"{ch.root.position.x:F1},{ch.root.position.z:F1},y{ch.root.position.y:F2}{(Falling ? " fall" : "")} | ");
             }
-            ch.Sync(); cam.Update(1, ch.root.position);
+            fastTest = false; secondary.Reset(); ch.Sync(); cam.Update(1, ch.root.position);
             sb.Append($"END {ch.root.position.x:F2},{ch.root.position.z:F2},y{ch.root.position.y:F2}");
             return sb.ToString();
+        }
+        /// move the player anywhere in the world (debug map click, MCP tests); streams the area in first
+        public void Teleport(Vector3 p)
+        {
+            p.x = Mathf.Clamp(p.x, WorldCollision.worldRect.xMin, WorldCollision.worldRect.xMax); p.z = Mathf.Clamp(p.z, WorldCollision.worldRect.yMin, WorldCollision.worldRect.yMax);
+            open.Update(p, true);
+            p.y = 0; WorldCollision.Resolve(ref p, .4f); p.y = WorldCollision.Height(p.x, p.z, 3);
+            moveTarget = null; ch.root.position = p; ch.UpdateWorld(); rs = RopeState.None;
+            anim.Play("idle"); anim.ResetFeet(); secondary.Reset();
+            open.Update(p, true); ch.Sync(); cam.Update(1, p);
+            Cue($"순간이동 · {Regions.All[Regions.At(p)].name} ({p.x:F0}, {p.z:F0})", 1.4f);
         }
         public void Do(string action)
         {
@@ -363,25 +400,52 @@ namespace Soul
             if (hurtFlash > 0) { GUI.color = new Color(.8f, .05f, .02f, hurtFlash * .35f); GUI.DrawTexture(new Rect(0, 0, W, H), white); }
             enemies?.DrawGUI(cam.camera); atmo?.DrawGUI();
             // hp
-            GUI.color = new Color(0, 0, 0, .55f); GUI.DrawTexture(new Rect(20, 20, 260, 18), white);
-            GUI.color = new Color(.25f, .75f, 1f, .95f); GUI.DrawTexture(new Rect(22, 22, 256 * player.hp / player.max, 14), white);
-            GUI.color = Color.white; GUI.Label(new Rect(26, 19, 250, 20), $"{Mathf.CeilToInt(player.hp)} / {player.max}", small);
-            GUI.Label(new Rect(20, 42, 300, 20), $"처치 {kills}", small);
-            if (atmo?.Current != null) GUI.Label(new Rect(20, 82, 400, 20), $"{atmo.Current.name}  ·  {ch.root.position.x:F0}, {ch.root.position.z:F0}", small);
-            GUI.Label(new Rect(20, 62, 400, 20), anim.name.ToUpper() + (anim.name.StartsWith("light") ? $"   0{anim.name[anim.name.Length - 1]} / 03" : ""), small);
+            if (UiArt.Kit)
+            {   // generated frame (UI/ui_kit.png): fill sits in the frame's inner slot
+                var fr = new Rect(14, 10, 320, 52); float ix = fr.x + fr.width * .085f, iw = fr.width * .83f, iy = fr.y + fr.height * .36f, ih = fr.height * .28f;
+                GUI.color = new Color(0, 0, 0, .6f); GUI.DrawTexture(new Rect(ix, iy, iw, ih), white);
+                GUI.color = new Color(.25f, .75f, 1f, .95f); GUI.DrawTexture(new Rect(ix, iy, iw * player.hp / player.max, ih), white);
+                GUI.color = Color.white; UiArt.Piece(fr, UiArt.HpBar);
+                GUI.Label(new Rect(ix + iw - 120, iy - 4, 116, 20), $"{Mathf.CeilToInt(player.hp)} / {player.max}", new GUIStyle(small) { alignment = TextAnchor.MiddleRight, fontSize = 11 });
+                // owned movement parts
+                float px = 220;
+                for (int pi = Parts.Rope; pi <= Parts.LabKeys; pi++) if (Parts.Has(pi)) { UiArt.Icon(new Rect(px, fr.yMax - 4, 26, 26), UiArt.PartIcon(pi)); px += 28; }
+            }
+            else
+            {
+                GUI.color = new Color(0, 0, 0, .55f); GUI.DrawTexture(new Rect(20, 20, 260, 18), white);
+                GUI.color = new Color(.25f, .75f, 1f, .95f); GUI.DrawTexture(new Rect(22, 22, 256 * player.hp / player.max, 14), white);
+                GUI.color = Color.white; GUI.Label(new Rect(26, 19, 250, 20), $"{Mathf.CeilToInt(player.hp)} / {player.max}", small);
+            }
+            if (debugHud) GUI.Label(new Rect(20, 162, 300, 20), $"처치 {kills}", small);
+            if (debugHud && atmo?.Current != null) GUI.Label(new Rect(20, 142, 400, 20), $"{atmo.Current.name}  ·  {ch.root.position.x:F0}, {ch.root.position.z:F0}", small);
+            if (debugHud) GUI.Label(new Rect(20, 182, 400, 20), anim.name.ToUpper() + (anim.name.StartsWith("light") ? $"   0{anim.name[anim.name.Length - 1]} / 03" : ""), small);
             // skill bar
             var slots = new (KeyCode code, string key, string label)[] { (KeyCode.A, "A", "연속 베기"), (KeyCode.Q, "Q", "회오리"), (KeyCode.W, "W", "레이저 파동"), (KeyCode.E, "E", "반격"), (KeyCode.R, "R", "칼날 폭풍"), (KeyCode.Space, "SPACE", "대쉬"), (KeyCode.F, "F", "점프") };
-            float sw = 74, x0 = W / 2 - slots.Length * sw / 2;
+            int[] slotIcon = { UiArt.SLASH, UiArt.WHIRL, UiArt.WAVE, UiArt.PARRY, UiArt.STORM, UiArt.DASH, UiArt.JUMP };
+            bool art = UiArt.Kit && UiArt.HasIcons;
+            float sw = art ? 70 : 74, x0 = W / 2 - slots.Length * sw / 2;
             for (int i = 0; i < slots.Length; i++)
             {
-                var r = new Rect(x0 + i * sw + 4, H - 74, sw - 8, 56);
+                var r = art ? new Rect(x0 + i * sw + 3, H - 88, sw - 6, (sw - 6) * 196f / 188f) : new Rect(x0 + i * sw + 4, H - 74, sw - 8, 56);
+                if (art)
+                {   // generated slot frame + icon; cooldown darkens the icon from the top
+                    var inner = new Rect(r.x + r.width * .14f, r.y + r.height * .14f, r.width * .72f, r.height * .72f);
+                    GUI.color = new Color(.02f, .03f, .04f, .85f); GUI.DrawTexture(inner, white);
+                    GUI.color = Color.white; UiArt.Icon(inner, slotIcon[i], .08f);
+                    if (COOLDOWN.TryGetValue(slots[i].code, out var cd2) && ready.TryGetValue(slots[i].code, out var t2) && t2 > realTime)
+                    { float left = (t2 - realTime) / cd2; GUI.color = new Color(0, 0, 0, .65f); GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width, inner.height * left), white); }
+                    GUI.color = Color.white; UiArt.Piece(r, UiArt.Slot);
+                    GUI.Label(new Rect(r.x, r.yMax - 8, r.width, 18), slots[i].key, keyStyle);
+                    continue;
+                }
                 GUI.color = new Color(.02f, .05f, .08f, .75f); GUI.DrawTexture(r, white);
                 if (COOLDOWN.TryGetValue(slots[i].code, out var cd) && ready.TryGetValue(slots[i].code, out var t) && t > realTime)
                 { float left = (t - realTime) / cd; GUI.color = new Color(0, 0, 0, .6f); GUI.DrawTexture(new Rect(r.x, r.y, r.width, r.height * left), white); }
                 GUI.color = Color.white; GUI.Label(new Rect(r.x, r.y + 4, r.width, 22), slots[i].key, keyStyle); GUI.Label(new Rect(r.x, r.y + 28, r.width, 20), slots[i].label, keyStyle);
             }
             GUI.color = Color.white;
-            string hint = realTime < cueUntil ? cueText : "우클릭 이동 · A 공격 · Q W E R 스킬 · SPACE 대쉬 · F 점프 · 휠 줌 · 1/2 소환 · 0 제거 · P 허수아비 · C 정지";
+            string hint = realTime < cueUntil ? cueText : "우클릭 이동 · A 공격 · Q W E R 스킬 · SPACE 대쉬 · F 점프 · G 휴식 · M 지도 · 휠 줌 · 1/2 소환 · 0 제거 · P 허수아비 · C 정지";
             GUI.Label(new Rect(0, H - 104, W, 24), hint, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             // summon panel
             float bx = W - 170;
@@ -390,6 +454,61 @@ namespace Soul
             if (GUI.Button(new Rect(bx, 80, 150, 26), "0  전부 제거")) enemies.ClearAll();
             if (GUI.Button(new Rect(bx, 110, 150, 26), (enemies.passive ? "● " : "") + "P  허수아비 모드")) TogglePassive();
             if (paused) GUI.Label(new Rect(0, H * .18f, W, 40), "PAUSED   ·   C 다시 재생 · . 한 프레임 진행", big);
+            // gate hint near a link site: debug only (F1). In play the terrain itself says what is needed.
+            var site = debugHud ? ZoneWorld.NearestSite(ch.root.position, 22) : null;
+            if (site != null && site.link.kind != ZoneGraph.Kind.Free)
+            {
+                bool pass = site.link.kind == ZoneGraph.Kind.Drop || Parts.Has(site.link.part);
+                string to = $"Z{site.link.a} {ZoneGraph.Zones[site.link.a].name} → Z{site.link.b} {ZoneGraph.Zones[site.link.b].name}";
+                string what = site.link.kind == ZoneGraph.Kind.Drop ? "낙하 · 한 방향" : pass ? $"{Parts.Names[site.link.part]} · 통과 가능" : $"{Parts.Names[site.link.part]} 필요";
+                GUI.color = site.Gate ? MeshBuilder.Hex(ZoneGates.PartHex[site.link.part]) : Color.white;
+                GUI.Label(new Rect(0, H * .68f, W, 30), $"[{what}]  {site.link.note}", new GUIStyle(big) { fontSize = 18 });
+                GUI.color = Color.white; GUI.Label(new Rect(0, H * .68f + 28, W, 20), to, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
+            }
+            if (debugHud) GUI.Label(new Rect(20, 102, 500, 20), $"파츠: {Parts.Owned()}   ·   M 지도 · Shift+1~6 파츠 토글 · F1 디버그 표시", small);
+            ZoneGUI(W, H); RopeGUI();
+            if (showMap) DrawMap();
+        }
+
+        Rect MapRect()
+        {
+            float h = Screen.height * .78f, w = h * ZoneWorld.MAP_W / ZoneWorld.MAP_H;
+            if (w > Screen.width * .9f) { w = Screen.width * .9f; h = w * ZoneWorld.MAP_H / ZoneWorld.MAP_W; }
+            return new Rect((Screen.width - w) / 2, (Screen.height - h) / 2, w, h);
+        }
+        void DrawMap()
+        {
+            var r = MapRect();
+            GUI.color = new Color(0, 0, 0, .7f); GUI.DrawTexture(new Rect(r.x - 6, r.y - 6, r.width + 12, r.height + 34), white);
+            if (UiArt.Paper) { GUI.color = Color.white; GUI.DrawTexture(r, UiArt.Paper, ScaleMode.ScaleAndCrop); GUI.color = new Color(1, 1, 1, .8f); }   // scavenged survey paper under the map
+            else GUI.color = Color.white;
+            var painted = MapPainter.Texture();   // illustrated map (built over a few frames), flat map until then
+            GUI.DrawTexture(r, painted ? painted : ZoneWorld.MapTexture()); GUI.color = Color.white;
+            if (!painted && MapPainter.Progress > 0) GUI.Label(new Rect(r.x + 12, r.yMax - 26, 300, 20), $"지도 그리는 중 {MapPainter.Progress * 100:F0}%", small);
+            if (!debugHud) GUI.DrawTexture(r, MapFog.Texture());   // fog of war (F1 shows everything)
+            UiArt.Nine(new Rect(r.x - 22, r.y - 22, r.width + 44, r.height + 44), UiArt.Panel, .13f, 46);   // generated riveted frame
+            Vector2 P(Vector2 world) { var uv = ZoneWorld.MapUV(new Vector3(world.x, 0, world.y)); return new Vector2(r.x + uv.x * r.width, r.y + uv.y * r.height); }
+            var label = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 14, fontStyle = FontStyle.Bold };
+            foreach (var z in ZoneGraph.Zones)
+            {
+                if (!debugHud && !MapFog.ZoneTouched(z.id)) continue;
+                var c = P(ZoneWorld.Center(z.id));
+                GUI.color = new Color(0, 0, 0, .8f); GUI.Label(new Rect(c.x - 99, c.y - 9, 200, 20), $"Z{z.id} {z.name}", label);
+                GUI.color = Color.white; GUI.Label(new Rect(c.x - 100, c.y - 10, 200, 20), $"Z{z.id} {z.name}", label);
+            }
+            if (debugHud) foreach (var st in ZoneWorld.Sites)
+            {
+                var c = P(st.pos); bool part = st.link.kind == ZoneGraph.Kind.Part, owned = !part || Parts.Has(st.link.part);
+                GUI.color = part ? MeshBuilder.Hex(ZoneGates.PartHex[st.link.part]) : st.link.kind == ZoneGraph.Kind.Drop ? new Color(.6f, .6f, .6f) : new Color(.85f, .85f, .85f);
+                float sz = owned ? 9 : 7; GUI.DrawTexture(new Rect(c.x - sz / 2, c.y - sz / 2, sz, sz), white);
+                // short tick toward link.b
+                for (int i = 1; i <= 3; i++) { var q = c + new Vector2(st.n.x, st.n.y) * (sz / 2 + i * 2.2f); GUI.DrawTexture(new Rect(q.x - 1.5f, q.y - 1.5f, 3, 3), white); }
+            }
+            var pp = P(new Vector2(ch.root.position.x, ch.root.position.z));
+            DrawMapZone(r, pp);
+            GUI.color = new Color(.3f, .85f, 1f); GUI.DrawTexture(new Rect(pp.x - 5, pp.y - 5, 10, 10), white);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(r.x, r.yMax + 4, r.width, 22), debugHud ? "M 닫기 · 포드 클릭 = 빠른 이동 · Shift+클릭 = 순간이동 · 색 점 = 파츠 게이트 · 회색 = 통로/낙하 · 빨강 = 보스" : "M 닫기 · 발견한 포드를 누르면 빠른 이동", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
         }
     }
 }

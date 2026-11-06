@@ -11,7 +11,7 @@ namespace Soul
     {
         // rig dimensions (rig.js / anim.js)
         public const float REST_HEIGHT = .96f;
-        const float ARM_UPPER = .34f, ARM_FORE = .30f;
+        public const float ARM_UPPER = .34f, ARM_FORE = .30f;
         const float ANKLE = .10f, THIGH = .43f, SHIN = .40f, UPPER = ARM_UPPER, FORE = ARM_FORE;
         const float BLADE_FROM = .12f, BLADE_END = 1.0f, BLADE_R = .05f, WRIST_MAX = 0, LAG_F = 0, LAG_D = .022f;
         const float BLADE_LEN = BLADE_END;
@@ -53,6 +53,8 @@ namespace Soul
         public Func<float, float, float> groundAt = (x, z) => 0;
         /// true while falling off a ledge: leg IK is suspended
         public bool airborne;
+        /// movement multiplier from the ground (water: Terrain.Slow); scales locomotion speed and move root motion
+        public float speedScale = 1;
         float airLift, airLiftT0, airLiftT1;
         float A(Vector3 p) => ANKLE + groundAt(p.x, p.z);
         /// current jump-arc height above the take-off floor (0 when not in an arc)
@@ -202,7 +204,7 @@ namespace Soul
         {
             var m = move; float previous = time; time = Mathf.Min(time + dt, m.duration);
             if (name == "heavyCharge") charge = Mathf.Min(1, time / m.duration);
-            float distance = RootAt(m, time) - RootAt(m, previous);
+            float distance = (RootAt(m, time) - RootAt(m, previous)) * speedScale;
             ch.root.position += Sim.ApplyAxisAngle(new Vector3(0, 0, distance), up, startYaw);
             if (m.yaw != null) RootYaw = startYaw + CurveAt(m.yaw, time) * rad + yawOffset * (1 - Sim.Smooth(Mathf.Min(1, time / .14f)));
             else { float dy = Sim.Mod(startYaw - RootYaw + Mathf.PI, Mathf.PI * 2) - Mathf.PI; RootYaw += dy * Sim.Damp(26, dt); }
@@ -232,7 +234,7 @@ namespace Soul
         }
         void Locomotion(float dt, Vector3 direction, bool running)
         {
-            float previousSpeed = speed, targetSpeed = direction.sqrMagnitude > .01f ? (running ? 4.2f : 1.65f) * Mathf.Min(1, direction.magnitude) : 0;
+            float previousSpeed = speed, targetSpeed = direction.sqrMagnitude > .01f ? (running ? 4.2f : 1.65f) * Mathf.Min(1, direction.magnitude) * speedScale : 0;
             var desired = direction.sqrMagnitude > 1e-6f ? direction.normalized * targetSpeed : Vector3.zero;
             accel ??= Vector3.zero;
             { float w = 2 * Mathf.PI * 1.7f; accel += ((desired - velocity) * (w * w) + accel.Value * (-2 * w)) * dt; velocity += accel.Value * dt; }
@@ -383,7 +385,7 @@ namespace Soul
             }
         }
         // rig.js solveTwoBone / aim
-        static void SolveTwoBone(TNode upper, TNode lower, TNode end, Vector3 target, Vector3 pole, float lengthA, float lengthB)
+        public static void SolveTwoBone(TNode upper, TNode lower, TNode end, Vector3 target, Vector3 pole, float lengthA, float lengthB)
         {
             upper.UpdateWorldFromRoot(true);
             var origin = upper.WorldPosition;

@@ -8,6 +8,10 @@ namespace Soul
     {
         public readonly Camera camera;
         public bool side; public float zoom = 1;
+        /// view yaw around the player (0 = north-up). T snaps it behind the character and it stays there (SnapYaw).
+        public float yaw, targetYaw; bool snapNext;
+        /// turn the view to `y` instantly (no swing), position included
+        public void SnapYaw(float y) { yaw = targetYaw = y; snapNext = true; }
         Vector3 target = new Vector3(0, 1, 0), position = new Vector3(0, 11, 8);
         float shakeAmount, clock;
         public FollowCam(Camera cam) { camera = cam; camera.fieldOfView = 38; camera.nearClipPlane = .1f; camera.farClipPlane = 140; }
@@ -27,8 +31,11 @@ namespace Soul
             clock += dt; float aspect = camera.aspect;
             var offset = side ? new Vector3(8.8f, 2.5f, .25f) : new Vector3(0, 10.2f, 7.0f) * zoom;
             if (aspect < 1.2f) offset *= 1.2f;
+            yaw += Sim.WrapPi(targetYaw - yaw) * (1 - Mathf.Exp(-dt * 6));
+            if (!side) offset = Sim.ApplyAxisAngle(offset, Vector3.up, yaw);
             var tgt = simPos + new Vector3(0, .8f, 0); target = Vector3.LerpUnclamped(target, tgt, 1 - Mathf.Exp(-dt * 8));
-            position = Vector3.LerpUnclamped(position, target + offset, 1 - Mathf.Exp(-dt * 7));
+            if (snapNext) { target = tgt; position = target + offset; snapNext = false; }
+            else position = Vector3.LerpUnclamped(position, target + offset, 1 - Mathf.Exp(-dt * 7));
             shakeAmount *= Mathf.Exp(-dt * 17);
             var p = position; p.x += Mathf.Sin(clock * 103) * shakeAmount; p.y += Mathf.Sin(clock * 137) * shakeAmount * .6f;
             camera.transform.position = Sim.ToUnity(p);

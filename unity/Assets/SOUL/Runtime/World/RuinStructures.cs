@@ -470,7 +470,10 @@ namespace Soul
                 }
                 // Two room partitions with a 1.8 m doorway, clear of stair lanes.
                 Solid(b, p, 2.3f, -.5f, 2.6f, .18f, y, 2.1f, Interior);
-                Solid(b, p, 6.1f, -.5f, 1.4f, .18f, y, 1.3f, Weathered);
+                // Only the ground floor has a slab under the right-hand one: upper floors leave
+                // this corner open. Same colour draw either way, so the layout stream is unchanged.
+                if (f == 0) Solid(b, p, 6.1f, -.5f, 1.4f, .18f, y, 1.3f, Weathered);
+                else b.Jitter(Weathered);
                 Detail(b, seed ^ (f*7919), () =>
                 {
                     RoomClutter(b,2,-3.4f,y,f);

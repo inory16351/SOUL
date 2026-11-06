@@ -125,6 +125,9 @@ namespace Soul
     public class EnemyType
     {
         public string prefab; public float hp, speed, turn, keep, poise, damageScale = 1; public EnemyAttack[] attacks;
+        public float size = 1;          // model scale (radius / height follow)
+        public string bossName;         // non-null = boss: screen HP bar instead of the floating one
+        public int soul = 16;
         public static readonly Dictionary<string, EnemyType> TYPES = new Dictionary<string, EnemyType>
         {
             { "crawler", new EnemyType { prefab = "Prefabs/Crawler", hp = 60, speed = 3.3f, turn = 7, keep = 1.1f, poise = 0, attacks = new[] {
@@ -135,6 +138,14 @@ namespace Soul
                 new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 3.4f, cooldown = 3.0f, windup = .95f, kind = "cone", radius = 3.8f, angle = 2.5f, damage = 22, recover = .85f },
                 new EnemyAttack { name = "slam", rangeMin = 2.5f, rangeMax = 7, cooldown = 4.5f, windup = 1.15f, kind = "circle", radius = 2.5f, damage = 30, recover = 1.0f, atTarget = true },
                 new EnemyAttack { name = "thrust", rangeMin = 3, rangeMax = 7.5f, cooldown = 3.8f, windup = .85f, kind = "line", width = 1.4f, length = 6.5f, damage = 24, recover = .9f },
+            }, soul = 34 } },
+            // Z0 boss (vertical slice stand-in): the hollow warden at 1.6x with wider reach and a ground quake.
+            // The tear-off gimmick (뜯기) comes with the first real boss (stage 5).
+            { "ashWarden", new EnemyType { prefab = "Prefabs/AshWarden", hp = 900, speed = 1.9f, turn = 3.6f, keep = 2.6f, poise = 150, size = 1f, bossName = "재의 감시자", soul = 80, attacks = new[] {
+                new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 5.2f, cooldown = 2.8f, windup = .9f, kind = "cone", radius = 5.8f, angle = 2.6f, damage = 24, recover = .8f },
+                new EnemyAttack { name = "slam", rangeMin = 3, rangeMax = 10, cooldown = 4.2f, windup = 1.1f, kind = "circle", radius = 3.6f, damage = 32, recover = .95f, atTarget = true },
+                new EnemyAttack { name = "thrust", rangeMin = 4, rangeMax = 11, cooldown = 3.6f, windup = .85f, kind = "line", width = 2.1f, length = 10, damage = 26, recover = .9f },
+                new EnemyAttack { name = "quake", rangeMin = 0, rangeMax = 6, cooldown = 9, windup = 1.4f, kind = "circle", radius = 7, damage = 28, recover = 1.4f },
             } } },
         };
     }
@@ -174,7 +185,7 @@ namespace Soul
         {
             this.mgr = mgr; this.type = type; def = EnemyType.TYPES[type];
             go = Object.Instantiate(Resources.Load<GameObject>(def.prefab), mgr.parent); go.name = type;
-            model = go.GetComponent<SoulModel>(); radius = model.radius; height = model.height;
+            model = go.GetComponent<SoulModel>(); radius = model.radius * def.size; height = model.height * def.size;
             pos = p; floorY = p.y; yaw = Random.value * Mathf.PI * 2; hp = def.hp; walk = Random.value * 10;
             body = Part.Of(model, "body"); head = Part.Of(model, "head"); jaw = Part.Of(model, "jaw"); torso = Part.Of(model, "torso"); pelvisP = Part.Of(model, "pelvis");
             eyeT = model.Part("eye"); coreT = model.Part("core");
@@ -210,13 +221,15 @@ namespace Soul
             if ((type == "crawler" && (heavy || Random.value < .35f)) || (def.poise > 0 && poiseDmg >= def.poise)) { poiseDmg = 0; ToStagger(heavy ? .9f : .45f); }
             return true;
         }
+        /// remove without a kill (lost boss fight): no soul burst, no onKill; gone next update
+        public void Despawn() { ClearTele(); state = "dead"; t = 99; }
         public void ToStagger(float time) { ClearTele(); state = "stagger"; t = 0; staggerTime = time; }
         void ClearTele() { if (tele != null) { tele.Dispose(); tele = null; } }
         public void Die()
         {
             if (state == "dead") return;
             ClearTele(); state = "dead"; t = 0;
-            mgr.ReleaseSoul(Center(), type == "warden" ? 34 : 16);
+            mgr.ReleaseSoul(Center(), def.soul);
             mgr.onKill?.Invoke(this);
         }
         public Vector3 CoreWorld() => coreT ? Sim.FromUnity(coreT.position) : Center();
@@ -270,7 +283,7 @@ namespace Soul
                 if (a.HasDash && t - dt < a.dashTime)
                 {
                     float E(float x) => 1 - Mathf.Pow(1 - Mathf.Min(1, x), 3);
-                    float k = E(t / a.dashTime) - E((t - dt) / a.dashTime); pos += dashDir * (a.dash * k);
+                    float k = E(t / a.dashTime) - E((t - dt) / a.dashTime); pos += dashDir * (a.dash * k * Terrain.Slow(pos.x, pos.z));
                 }
                 if (t > (a.dashTime >= 0 ? a.dashTime : .18f)) { state = "recover"; t = 0; }
             }
@@ -282,6 +295,7 @@ namespace Soul
                 pos.y = floorY - Mathf.Max(0, t - 1.2f) * .5f;
                 if (t > 3) return false;
             }
+            move *= Terrain.Slow(pos.x, pos.z);   // wading
             curSpeed = Mathf.Lerp(curSpeed, move, Sim.Damp(move > curSpeed ? 3.5f : 6, dt));
             if (curSpeed > .01f) pos += Sim.Forward(yaw) * (curSpeed * dt);
             move = curSpeed;
@@ -302,7 +316,7 @@ namespace Soul
             flash = Mathf.Max(0, flash - dt * 6);
             if (eyeMat) { var c = Color.Lerp(eyeColor * (1 + flare), new Color(4, 4, 4, 1), flash); c.a = 1; Mats.SetColor(eyeMat, c); }
             if (coreMat) { var c = coreColor * (.9f + .25f * Mathf.Sin(t * 6) + flare * .6f); c.a = 1; Mats.SetColor(coreMat, c); }
-            if (alive && Random.value < dt * (type == "warden" ? 6 : 2.5f)) mgr.Wisp(CoreWorld(), .5f);
+            if (alive && Random.value < dt * (type != "crawler" ? 6 * def.size : 2.5f)) mgr.Wisp(CoreWorld(), .5f);
             return true;
         }
         void WriteRoot()
@@ -310,7 +324,7 @@ namespace Soul
             var tr = go.transform;
             tr.localPosition = Sim.ToUnity(pos);
             tr.localRotation = Sim.ToUnity(Sim.EulerXYZ(rotX, yaw, rotZ));
-            tr.localScale = Vector3.one * scale;
+            tr.localScale = Vector3.one * scale * def.size;
         }
         void Animate(float dt, string pose, float move)
         {
@@ -513,7 +527,7 @@ namespace Soul
             var right = cam.transform.right;
             foreach (var e in list)
             {
-                if (!e.alive) continue;
+                if (!e.alive || e.def.bossName != null) continue;
                 var w = Sim.ToUnity(e.pos + Vector3.up * (e.height * e.scale + .45f));
                 Vector3 a = cam.WorldToScreenPoint(w - right * .55f * e.scale), b = cam.WorldToScreenPoint(w + right * .55f * e.scale), c = cam.WorldToScreenPoint(w);
                 if (c.z <= 0) continue;

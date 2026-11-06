@@ -1,0 +1,8 @@
+# 05_boss_model — Warden of Ash
+
+- `createAshWarden()`: new final-size boss, `radius: 1.52`, `height: 4.32`; identical warden part contract, joint names and parenting, with joint offsets baked at 1.6x and unit transforms. Scorched concrete furnace, exposed rebar, brighter cracked core, broken aerial crown, rust straps/bolts, shear blades and ash-grey rags. Existing crawler/warden output is unchanged.
+- Local `joint()`: separate arm-owned armour collars around exposed hot shoulder/elbow bearings. Local `arm()`: chipped shells and rags clear the joints; elbow/blade remain descendants for later detachment. Local `leg()`: reinforced reverse-hocked legs and broad scrap talons.
+- `exportAll()`: only the enemy list changed, adding `['ashWarden', em.createAshWarden]`.
+- Triangles: **3,472 total** (pelvis/rags 140, torso/mantle/core 900, head/crown/eye 440, arms 636 each, legs 360 each). Rest-pose geometry reaches radius 1.443 m and height 4.301 m, with feet at ground level.
+- Validation: Node syntax checks and `git diff --check`; construction with the project's Three.js 0.160.0; exact hierarchy/offset checks, deterministic repeat builds, unchanged original-model geometry, finite/nondegenerate triangles and footprint/budget checks. Ray tests at 55 degrees confirm shoulder seams from all four cardinal views and elbow seams from front/back/outward views; the torso naturally hides the far elbow.
+- Pending: rendered Unity/animation review. Exporter and Unity were not run. Claude still needs to export/import and switch the boss to its new prefab at size 1; runtime/importer files were not changed.

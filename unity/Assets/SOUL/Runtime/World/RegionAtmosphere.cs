@@ -8,6 +8,8 @@ namespace Soul
     {
         readonly Light sun; readonly Camera cam;
         Color fog, sky, eq, ground, sunCol; float density, sunI;
+        /// ease rate toward the target look (1/s); SoulGame slows it for the purification reveal
+        public float ease = .9f;
         public int current = -1; public RegionDef Current => current >= 0 ? Regions.All[current] : null;
         float candidateTime; int candidate = -1;
         // banner
@@ -18,18 +20,18 @@ namespace Soul
         {
             this.sun = sun; this.cam = cam;
             if (sun) sun.shadowStrength = .65f;   // softer: tall ruins otherwise blanket the screen in black
-            var r = Regions.All[0]; Snap(r);
+            var r = Regions.Look(0); Snap(r);
         }
         void Snap(RegionDef r) { fog = r.fog; sky = r.ambSky; eq = r.ambEquator; ground = r.ambGround; sunCol = r.sun; density = r.fogDensity; sunI = r.sunIntensity; Apply(); }
 
         public void Update(float dt, Vector3 pos)
         {
             int at = Regions.At(pos);
-            if (current < 0) { current = at; Snap(Regions.All[at]); ShowBanner(Regions.All[at]); }
+            if (current < 0) { current = at; Snap(Regions.Look(at)); ShowBanner(Regions.All[at]); }
             // hysteresis: a new region must hold for 0.6 s before it counts (no flicker on borders)
             if (at != current) { if (at != candidate) { candidate = at; candidateTime = 0; } candidateTime += dt; if (candidateTime > .6f) { current = at; ShowBanner(Regions.All[at]); } }
             else candidate = -1;
-            var t = Regions.All[current]; float k = Sim.Damp(.9f, dt);
+            var t = Regions.Look(current); float k = Sim.Damp(ease, dt);
             fog = Color.Lerp(fog, t.fog, k); sky = Color.Lerp(sky, t.ambSky, k); eq = Color.Lerp(eq, t.ambEquator, k); ground = Color.Lerp(ground, t.ambGround, k);
             sunCol = Color.Lerp(sunCol, t.sun, k); density = Mathf.Lerp(density, t.fogDensity, k); sunI = Mathf.Lerp(sunI, t.sunIntensity, k);
             Apply();

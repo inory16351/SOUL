@@ -11,7 +11,9 @@ namespace Soul
         const int COUNT = 360; const float SIZE = .016f;
         readonly Vector3[] pos = new Vector3[COUNT]; readonly float[] fall = new float[COUNT], phase = new float[COUNT];
         readonly Vector3[] verts = new Vector3[COUNT * 4];
-        readonly Mesh mesh; float time; Vector3 center;
+        readonly Mesh mesh; readonly Material mat; float time; Vector3 center;
+        /// 0 = grey ash, 1 = purified zone: warm glowing pollen / fireflies drifting up (eased)
+        public float bloom; float b;
         uint seed = 4207;
         float Rand() { seed = seed * 1664525u + 1013904223u; return seed / 4294967296f; }
 
@@ -33,26 +35,28 @@ namespace Soul
             var go = new GameObject("drifting ash"); go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = go.AddComponent<MeshRenderer>();
-            r.sharedMaterial = Mats.Unlit(new Color(1, 1, 1, .52f), Blend.Alpha, true, CullMode.Off, false);
+            r.sharedMaterial = mat = Mats.Unlit(new Color(1, 1, 1, .52f), Blend.Alpha, true, CullMode.Off, false);
             r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;
         }
         static float Wrap(float v, float span) => Sim.Mod(v, span);
         public void Update(float dt, Vector3 c)
         {
             float step = float.IsFinite(dt) ? Mathf.Clamp(dt, 0, .1f) : 0;
-            time += step;
+            time += step; b = Mathf.MoveTowards(b, bloom, step * .35f);
+            float fallK = 1 - 1.35f * b;
+            Mats.SetColor(mat, Color.Lerp(new Color(1, 1, 1, .52f), new Color(2.6f, 2.3f, 1.1f, .85f), b));
             if (float.IsFinite(c.x) && float.IsFinite(c.z)) center = new Vector3(c.x, float.IsFinite(c.y) ? c.y : 0, c.z);
             for (int i = 0; i < COUNT; i++)
             {
                 var p = pos[i]; float ph = phase[i];
                 p.x = center.x - 19 + Wrap(p.x + (.09f + Mathf.Sin(time * .6f + ph) * .13f) * step - center.x + 19, 38);
-                p.y = center.y + Wrap(p.y - fall[i] * step - center.y, 13);
+                p.y = center.y + Wrap(p.y - fall[i] * fallK * step - center.y, 13);
                 p.z = center.z - 19 + Wrap(p.z + Mathf.Cos(time * .4f + ph) * .1f * step - center.z + 19, 38);
                 pos[i] = p;
             }
             var cam = Camera.main;
             Vector3 right = cam ? cam.transform.right : Vector3.right, up = cam ? cam.transform.up : Vector3.up;
-            right *= SIZE * .5f; up *= SIZE * .5f;
+            float size = SIZE * (1 + b * 1.4f); right *= size * .5f; up *= size * .5f;
             for (int i = 0; i < COUNT; i++)
             {
                 var u = Sim.ToUnity(pos[i]); int v = i * 4;

@@ -157,6 +157,8 @@ namespace Soul
     {
         public bool box; public Vector2 center; public float radius; public Vector2 halfSize; public float yaw;
         public float y0, y1; public bool ranged;
+        public int gate;   // part id: stops blocking once the player owns that part (0 = always solid)
+        public PropCollider Gated(int part) { var c = this; c.gate = part; return c; }
         public static PropCollider Circle(float x, float z, float r) => new PropCollider { center = new Vector2(x, z), radius = r };
         /// oriented rectangle (half extents along local x/z, rotated by yaw around +Y, radians)
         public static PropCollider Rect(float x, float z, float halfX, float halfZ, float yaw = 0) => new PropCollider { box = true, center = new Vector2(x, z), halfSize = new Vector2(halfX, halfZ), yaw = yaw };
@@ -171,6 +173,7 @@ namespace Soul
     public struct PropSurface
     {
         public int kind; public Vector2 center, halfSize; public float yaw, top, yLow, yHigh, radius; public int gate;
+        public bool noGrab;   // rope edge-grabs ignore this surface (gate ledges: only their anchors count)
         public const int BOX = 0, RAMP = 1, MOUND = 2;
         public static PropSurface Box(float x, float z, float halfX, float halfZ, float top, float yaw = 0, int gate = 0) => new PropSurface { kind = BOX, center = new Vector2(x, z), halfSize = new Vector2(halfX, halfZ), top = top, yaw = yaw, gate = gate };
         public static PropSurface Ramp(float x, float z, float halfX, float halfZ, float yLow, float yHigh, float yaw = 0, int gate = 0) => new PropSurface { kind = RAMP, center = new Vector2(x, z), halfSize = new Vector2(halfX, halfZ), yLow = yLow, yHigh = yHigh, yaw = yaw, gate = gate };

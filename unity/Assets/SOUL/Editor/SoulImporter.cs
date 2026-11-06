@@ -34,6 +34,7 @@ namespace Soul.EditorTools
             Build("character", "Character");
             Build("crawler", "Crawler");
             Build("warden", "Warden");
+            if (File.Exists(Path.Combine(DataDir, "ashWarden.json"))) Build("ashWarden", "AshWarden");   // Z0 boss (Codex job 05)
             Build("map", "Map");
             BuildProps();
             File.Copy(Path.Combine(DataDir, "moves.json"), Path.Combine(RuntimeData, "moves.json"), true);

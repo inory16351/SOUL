@@ -3,19 +3,20 @@ using UnityEngine;
 
 namespace Soul
 {
-    // Streams the open world in 32 m chunks around the player: ground mesh (region-blended
-    // vertex colours), scattered region props with collision, landmarks and the cliff ring at
-    // the world edge. Deterministic per chunk (seeded by its coordinates), so a chunk always
+    // Streams the open world in 32 m chunks around the player: ground mesh (zone-blended
+    // vertex colours), border ridges + link gates (ZoneWorld / ZoneGates), scattered zone props
+    // with collision and landmarks. Deterministic per chunk (seeded by its coordinates), so a chunk always
     // regenerates identically. Prop meshes are cached per (type, variant).
     public class WorldStreamer
     {
-        public const float CHUNK = 32, CELL = 2;
+        public const float CHUNK = 32, CELL = 1;   // 1 m ground grid: room for the zone ground patterns (GroundLook)
         public int loadRadius = 3, unloadRadius = 4, buildPerFrame = 2;
         readonly Transform root;
-        readonly Material propMat, groundMat;
+        readonly Material propMat, groundMat, ridgeMat;
+        readonly Dictionary<int, Material> glowMats = new Dictionary<int, Material>();
+        readonly List<(GameObject go, int part)> gateSolids = new List<(GameObject, int)>();
         readonly Dictionary<Vector2Int, GameObject> loaded = new Dictionary<Vector2Int, GameObject>();
         readonly Dictionary<string, PropModel> cache = new Dictionary<string, PropModel>();
-        readonly float[] w = new float[4];
         public int ChunkCount => loaded.Count;
         public int PropCount;
 
@@ -24,6 +25,7 @@ namespace Soul
             root = new GameObject("Open World").transform; root.SetParent(parent, false);
             propMat = Mats.Lit(Color.white, Color.black, .12f, .12f, true); propMat.SetFloat("_Cutaway", 1);
             groundMat = Mats.Lit(Color.white, Color.black, 0, .05f, true);
+            ridgeMat = Mats.Lit(Color.white, Color.black, 0, .06f, true); ridgeMat.SetFloat("_Cutaway", 1);
             WorldCollision.chunkSize = CHUNK; WorldCollision.Clear();
         }
 
@@ -38,6 +40,7 @@ namespace Soul
         /// call every frame with the player's sim position; `immediate` builds everything now
         public void Update(Vector3 center, bool immediate = false)
         {
+            Terrain.Focus(center);
             var c = WorldCollision.KeyOf(center.x, center.z);
             var todo = new List<Vector2Int>();
             for (int dx = -loadRadius; dx <= loadRadius; dx++) for (int dz = -loadRadius; dz <= loadRadius; dz++)
@@ -50,17 +53,35 @@ namespace Soul
             for (int i = 0; i < n; i++) Build(todo[i]);
             var drop = new List<Vector2Int>();
             foreach (var k in loaded.Keys) if (Mathf.Abs(k.x - c.x) > unloadRadius || Mathf.Abs(k.y - c.y) > unloadRadius) drop.Add(k);
+            // wall gates vanish once their part is owned (Shift+1..6 toggles them live)
+            for (int i = gateSolids.Count - 1; i >= 0; i--)
+            {
+                var (go, part) = gateSolids[i];
+                if (!go) { gateSolids.RemoveAt(i); continue; }
+                bool show = !Parts.Has(part); if (go.activeSelf != show) go.SetActive(show);
+            }
             foreach (var k in drop)
             {
                 var gt = loaded[k].transform.Find("ground"); if (gt) Object.Destroy(gt.GetComponent<MeshFilter>().sharedMesh);
-                Object.Destroy(loaded[k]); loaded.Remove(k); WorldCollision.Unregister(k);
+                loaded[k].SetActive(false); Object.Destroy(loaded[k]); loaded.Remove(k); WorldCollision.Unregister(k);
             }
+        }
+        /// drop every chunk and rebuild around the player now (a zone's look changed)
+        public void RebuildAll(Vector3 center)
+        {
+            foreach (var kv in loaded)
+            {
+                var gt = kv.Value.transform.Find("ground"); if (gt) Object.Destroy(gt.GetComponent<MeshFilter>().sharedMesh);
+                kv.Value.SetActive(false); Object.Destroy(kv.Value); WorldCollision.Unregister(kv.Key);   // hide now: Destroy waits for the end of the frame
+            }
+            loaded.Clear(); gateSolids.Clear();
+            Update(center, true);
         }
         static bool InWorld(Vector2Int k)
         {
             float x0 = k.x * CHUNK, z0 = k.y * CHUNK;
-            float nx = Mathf.Clamp(0, x0, x0 + CHUNK), nz = Mathf.Clamp(0, z0, z0 + CHUNK);
-            return nx * nx + nz * nz < (Regions.EDGE_RADIUS + 40) * (Regions.EDGE_RADIUS + 40);
+            const float M = 40;
+            return x0 + CHUNK > ZoneWorld.MinX - M && x0 < ZoneWorld.MaxX + M && z0 + CHUNK > ZoneWorld.MinZ - M && z0 < ZoneWorld.MaxZ + M;
         }
 
         void Build(Vector2Int k)
@@ -71,8 +92,20 @@ namespace Soul
             BuildGround(go.transform, x0, z0);
             var cols = new List<WorldCollision.Col>(); var surfs = new List<WorldCollision.Surf>();
             var placed = new List<Vector3>();   // x, z, footprint
-            var rng = new System.Random(Hash(k.x, k.y, 1234));
+            var rng = new System.Random(Hash(k.x, k.y, 1234));   // reassigned to the bloom RNG for purified decor (see below)
             float R() => (float)rng.NextDouble();
+            // border ridge
+            var ridge = ZoneGates.Ridge(x0, z0, CHUNK, cols);
+            if (ridge)
+            {
+                var rg = new GameObject("ridge"); rg.transform.SetParent(go.transform, false);
+                rg.AddComponent<MeshFilter>().sharedMesh = ridge;
+                var rr = rg.AddComponent<MeshRenderer>(); rr.sharedMaterial = ridgeMat;
+            }
+            // link gates whose site falls in this chunk
+            foreach (var site in ZoneWorld.Sites)
+                if (site.pos.x >= x0 && site.pos.x < x0 + CHUNK && site.pos.y >= z0 && site.pos.y < z0 + CHUNK)
+                    PlaceGate(go.transform, site, cols, surfs);
             // landmarks whose origin falls in this chunk
             foreach (var lm in Regions.Landmarks)
                 if (lm.pos.x >= x0 && lm.pos.x < x0 + CHUNK && lm.pos.z >= z0 && lm.pos.z < z0 + CHUNK)
@@ -92,20 +125,27 @@ namespace Soul
                 if (pp.x >= x0 && pp.x < x0 + CHUNK && pp.z >= z0 && pp.z < z0 + CHUNK) Place(go.transform, m, pp, pyaw, 1, cols, surfs);
             }
             // regular scatter: candidates are tested against the region at their own position
-            foreach (var reg in Regions.All)
-                foreach (var s in reg.scatters)
+            // regular scatter + (purified zones) bloom decor drawn from its own RNG so the base layout never moves
+            var rngBloom = new System.Random(Hash(k.x, k.y, 777)); var rngBase = rng;
+            foreach (var zoneDef in Regions.All)
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    var reg = Regions.Look(zoneDef.index);
+                    if (pass == 1 && !ZoneState.Purified(zoneDef.index)) continue;
+                    var list = pass == 0 ? reg.scatters : reg.bloom;
+                    rng = pass == 1 ? rngBloom : rngBase;
+                foreach (var s in list)
                 {
                     int count = Mathf.FloorToInt(s.perChunk + R());
                     for (int i = 0; i < count * 3 && count > 0; i++)
                     {
                         float x = x0 + R() * CHUNK, z = z0 + R() * CHUNK; float yaw = R() * Mathf.PI * 2, scale = .85f + R() * .3f; int variant = (int)(R() * s.variants);
-                        if (Regions.At(x, z) != reg.index) continue;
-                        float rr = Mathf.Sqrt(x * x + z * z);
-                        if (rr > Regions.WORLD_RADIUS - 4) continue;
-                        if (Mathf.Abs(x) < Regions.ARENA_HALF + 1 && Mathf.Abs(z) < Regions.ARENA_HALF + 1) continue;   // keep the original arena
+                        if (ZoneWorld.At(x, z) != zoneDef.index) continue;
+                        if (pass == 0 && Mathf.Abs(x) < Regions.ARENA_HALF + 1 && Mathf.Abs(z) < Regions.ARENA_HALF + 1) continue;   // keep the original arena (bloom decor may grow there)
                         var m = Model(s.id, s.build, variant);
                         if (m.surfaces.Count > 0) scale = 1;            // climbable heights are authored; never rescale them
                         float fp = m.footprint * scale;
+                        if (s.decor ? ZoneWorld.Solid(x, z) || ZoneWorld.NearestSite(new Vector3(x, 0, z), 16) != null || ZoneAreas.Blocked(x, z, -6) || ZoneRoutes.Dist(x, z) < ZoneRoutes.HALF : !ZoneWorld.Clear(x, z, fp)) continue;   // keep ridges and corridors clear
                         if (!s.decor)
                         {
                             bool clear = true;
@@ -118,46 +158,139 @@ namespace Soul
                         if (--count <= 0) break;
                     }
                 }
-            // cliff ring at the edge of the world
-            for (int i = 0; i < 96; i++)
+                }
+            // route guiding: debris lining the trails (solid) and traces on them (decor)
+            routeTmp.Clear(); ZoneRoutes.Placements(x0, z0, CHUNK, routeTmp);
+            foreach (var pl in routeTmp)
             {
-                float a = i / 96f * Mathf.PI * 2; var p = new Vector3(Mathf.Sin(a), 0, Mathf.Cos(a)) * (Regions.EDGE_RADIUS + (Hash(i, 3, 9) % 7));
-                if (p.x < x0 || p.x >= x0 + CHUNK || p.z < z0 || p.z >= z0 + CHUNK) continue;
-                var m = Model("CanyonWall", RegionProps.CanyonWall, i % 6);
-                Place(go.transform, m, p, a + Mathf.PI / 2, 1.1f, cols, null);
+                if (ZoneWorld.Solid(pl.pos.x, pl.pos.z) || ZoneAreas.Blocked(pl.pos.x, pl.pos.z, -4)) continue;
+                var (id, build) = pl.kind == 0 ? ZoneRoutes.EdgeModel(pl.zone, pl.seed) : TraceProps.Trace(pl.zone, pl.seed);
+                var m = Model(id, build, Mathf.Abs(pl.seed) % (id == "RubblePile" ? 12 : 6));
+                if (pl.kind == 0)
+                {
+                    bool clear = true; foreach (var p in placed) { float dx = p.x - pl.pos.x, dz = p.y - pl.pos.z, min = p.z + m.footprint + .8f; if (dx * dx + dz * dz < min * min) { clear = false; break; } }
+                    if (!clear || ZoneRoutes.Dist(pl.pos.x, pl.pos.z) < ZoneRoutes.HALF + m.footprint * .6f) continue;
+                    placed.Add(new Vector3(pl.pos.x, pl.pos.z, m.footprint));
+                    Place(go.transform, m, pl.pos, pl.yaw, 1, cols, m.surfaces.Count > 0 ? surfs : null);
+                }
+                else Place(go.transform, m, pl.pos, pl.yaw, 1, null, null);
+            }
+            // water edges: reeds on shores, scum on the surface (WaterProps, Codex-owned meshes)
+            {
+                var wr = new System.Random(Hash(k.x, k.y, 919));
+                for (int i = 0; i < 40; i++)
+                {
+                    float x = x0 + (float)wr.NextDouble() * CHUNK, z = z0 + (float)wr.NextDouble() * CHUNK; int v = wr.Next(0, 6); float yaw = (float)wr.NextDouble() * Mathf.PI * 2;
+                    float d = Terrain.Water(x, z, out int wt); if (wt == Terrain.WATER_NONE && d <= 0) continue;
+                    int zone = ZoneWorld.At(x, z);
+                    if (d > .03f && d < .2f && wt != Terrain.WATER_OIL && wt != Terrain.WATER_CLEAN) { var (id, build) = WaterProps.Reeds(zone); Place(go.transform, Model(id, build, v), new Vector3(x, 0, z), yaw, .85f + (float)wr.NextDouble() * .4f, null, null); }
+                    else if (d > .25f && i % 3 == 0) { var (id, build) = WaterProps.Scum(zone); Place(go.transform, Model(id, build, v), new Vector3(x, d - .04f, z), yaw, 1, null, null); }
+                }
+            }
+            // border dressing (Codex-owned look)
+            var dress = BorderDressing.Dress(x0, z0, CHUNK);
+            if (dress)
+            {
+                var dg = new GameObject("border dressing"); dg.transform.SetParent(go.transform, false);
+                dg.AddComponent<MeshFilter>().sharedMesh = dress; var dr = dg.AddComponent<MeshRenderer>(); dr.sharedMaterial = ridgeMat;
             }
             WorldCollision.Register(k, cols, surfs);
         }
+        readonly List<ZoneRoutes.Placement> routeTmp = new List<ZoneRoutes.Placement>();
 
-        // ---------- plot grid for large structures (ruins region) ----------
+        // ---------- plot grid for large structures (ruin zones) ----------
         const float PLOT = 48;
-        static readonly Scatter[] PlotTypes =
+        static Scatter T(string id, System.Func<int, PropModel> b, float w) => new Scatter { id = id, build = b, perChunk = w };
+        /// per zone: structure types (weight = perChunk) and the share of plot cells that get one
+        static readonly Dictionary<int, (Scatter[] types, float fill)> PlotTypes = new Dictionary<int, (Scatter[], float)>
         {
-            new Scatter { id = "ApartmentRuin", build = RuinStructures.ApartmentRuin, perChunk = 3 },
-            new Scatter { id = "ShopRow", build = RuinStructures.ShopRow, perChunk = 2 },
-            new Scatter { id = "ParkingDeck", build = RuinStructures.ParkingDeck, perChunk = 1.2f },
-            new Scatter { id = "Overpass", build = RuinStructures.Overpass, perChunk = 1 },
-            new Scatter { id = "StairRuin", build = RuinStructures.StairRuin, perChunk = 1.5f },
+            [0] = (new[] { T("ApartmentRuin", RuinStructures.ApartmentRuin, 3), T("ShopRow", RuinStructures.ShopRow, 2), T("ParkingDeck", RuinStructures.ParkingDeck, 1.2f), T("Overpass", RuinStructures.Overpass, 1), T("StairRuin", RuinStructures.StairRuin, 1.5f) }, .8f),
+            [1] = (new[] { T("ApartmentRuin", RuinStructures.ApartmentRuin, 3), T("ShopRow", RuinStructures.ShopRow, 3), T("ParkingDeck", RuinStructures.ParkingDeck, 1.5f), T("Overpass", RuinStructures.Overpass, 1.5f), T("StairRuin", RuinStructures.StairRuin, 1) }, 1f),
+            [2] = (new[] { T("ApartmentRuin", RuinStructures.ApartmentRuin, 2), T("StairRuin", RuinStructures.StairRuin, 2), T("CollapsedTower", RuinStructures.CollapsedTower, .6f) }, .45f),
         };
+        /// centres of the structure plots overlapping a square (Terrain flattens under them)
+        public static IEnumerable<Vector2> PlotCentres(float x0, float z0, float size)
+        {
+            for (int cx = Mathf.FloorToInt(x0 / PLOT); cx <= Mathf.FloorToInt((x0 + size) / PLOT); cx++)
+                for (int cz = Mathf.FloorToInt(z0 / PLOT); cz <= Mathf.FloorToInt((z0 + size) / PLOT); cz++)
+                    if (PlotAt(cx, cz, out var p, out _, out _, out _)) yield return new Vector2(p.x, p.z);
+        }
+        static Material waterMat;
+        static readonly Color[] WaterCol = { Color.clear, new Color(.32f, .38f, .42f, .55f), new Color(.2f, .27f, .14f, .7f), new Color(.45f, .95f, .2f, .78f), new Color(.03f, .03f, .035f, .82f) };
+        /// translucent water surface over the basins of this chunk
+        void BuildWater(Transform parent, float x0, float z0)
+        {
+            var k = WorldCollision.KeyOf(x0 + 1, z0 + 1); Terrain.Grid(k, out _, out var surf, out var depth, out var type);
+            int n = 32, s = n + 1; var v = new List<Vector3>(); var c = new List<Color>(); var tri = new List<int>();
+            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++)
+            {
+                int a = i * s + j, b = (i + 1) * s + j, cc = (i + 1) * s + j + 1, d = i * s + j + 1;
+                if (Mathf.Max(Mathf.Max(depth[a], depth[b]), Mathf.Max(depth[cc], depth[d])) < .03f) continue;
+                int ty = Mathf.Max(Mathf.Max(type[a], type[b]), Mathf.Max(type[cc], type[d])); if (ty == 0) ty = Terrain.WATER_MIRE;
+                var col = WaterCol[ty].linear; col.a = WaterCol[ty].a;
+                int o = v.Count;
+                v.Add(Sim.ToUnity(new Vector3(x0 + i, surf[a], z0 + j))); v.Add(Sim.ToUnity(new Vector3(x0 + i + 1, surf[b], z0 + j)));
+                v.Add(Sim.ToUnity(new Vector3(x0 + i + 1, surf[cc], z0 + j + 1))); v.Add(Sim.ToUnity(new Vector3(x0 + i, surf[d], z0 + j + 1)));
+                foreach (int vi in new[] { a, b, cc, d }) { var cv = col; cv.a = col.a * Sim.SmoothStep(depth[vi], .02f, .16f); c.Add(cv); }   // shoreline fades out
+                tri.Add(o); tri.Add(o + 2); tri.Add(o + 3); tri.Add(o); tri.Add(o + 1); tri.Add(o + 2);
+            }
+            if (tri.Count == 0) return;
+            if (!waterMat) waterMat = Mats.Unlit(Color.white, Blend.Alpha, true, UnityEngine.Rendering.CullMode.Off, false);
+            var mesh = new Mesh { name = "water" }; mesh.SetVertices(v); mesh.SetColors(c); mesh.SetTriangles(tri, 0); mesh.RecalculateBounds();
+            var g = new GameObject("water"); g.transform.SetParent(parent, false);
+            g.AddComponent<MeshFilter>().sharedMesh = mesh; var mr = g.AddComponent<MeshRenderer>(); mr.sharedMaterial = waterMat; mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
         static bool PlotAt(int cx, int cz, out Vector3 pos, out float yaw, out Scatter type, out int variant)
         {
             var r = new System.Random(Hash(cx, cz, 4242));
             float jx = (float)r.NextDouble(), jz = (float)r.NextDouble(); yaw = (float)r.NextDouble() * Mathf.PI * 2; float pick = (float)r.NextDouble(); variant = r.Next(0, 6);
             pos = new Vector3((cx + .3f + jx * .4f) * PLOT, 0, (cz + .3f + jz * .4f) * PLOT);
             type = null;
-            float rr = Mathf.Sqrt(pos.x * pos.x + pos.z * pos.z);
-            if (rr < 52 || Regions.At(pos.x, pos.z) != 0) return false;                    // outside the arena, inside the ruins
-            foreach (var lm in Regions.Landmarks) if ((lm.pos - pos).sqrMagnitude < 30 * 30) return false;
-            float total = 0; foreach (var t in PlotTypes) total += t.perChunk;
-            pick *= total; foreach (var t in PlotTypes) { if (pick < t.perChunk) { type = t; break; } pick -= t.perChunk; }
-            type ??= PlotTypes[0];
+            float rr = Mathf.Sqrt(pos.x * pos.x + pos.z * pos.z), fill = (float)r.NextDouble();
+            if (rr < 52 || !PlotTypes.TryGetValue(ZoneWorld.At(pos.x, pos.z), out var table) || fill > ZoneAreas.PlotFill(pos.x, pos.z, table.fill)) return false;   // outside the arena, inside a ruin zone
+            if (!ZoneWorld.Clear(pos.x, pos.z, 22)) return false;
+            foreach (var lm in Regions.Landmarks) if ((lm.pos - pos).sqrMagnitude < 34 * 34) return false;
+            float total = 0; foreach (var t in table.types) total += t.perChunk;
+            pick *= total; foreach (var t in table.types) { if (pick < t.perChunk) { type = t; break; } pick -= t.perChunk; }
+            type ??= table.types[0];
             yaw = Mathf.Round(yaw / (Mathf.PI / 2)) * (Mathf.PI / 2) + ((float)r.NextDouble() - .5f) * .3f;   // street-grid-ish orientation
             return true;
+        }
+
+        Material Glow(int part)
+        {
+            if (!glowMats.TryGetValue(part, out var m)) { m = Mats.Unlit(Color.white * 2.4f, Blend.Opaque, true); glowMats[part] = m; }
+            return m;
+        }
+        void PlaceGate(Transform parent, ZoneWorld.Site site, List<WorldCollision.Col> cols, List<WorldCollision.Surf> surfs)
+        {
+            var g = ZoneGates.Get(site); var pos = new Vector3(site.pos.x, 0, site.pos.y);
+            var root = new GameObject($"gate {site.index} Z{site.link.a}-Z{site.link.b} {site.Label}"); root.transform.SetParent(parent, false);
+            if (g.fixedPart.mesh) Place(root.transform, g.fixedPart, pos, site.yaw, 1, cols, surfs);
+            else { foreach (var pc in g.fixedPart.colliders) cols.Add(WorldCollision.ToWorld(pc, pos, site.yaw, 1)); foreach (var ps in g.fixedPart.surfaces) surfs.Add(WorldCollision.ToWorld(ps, pos, site.yaw, 1)); }
+            if (g.fixedGlow) PlaceMesh(root.transform, g.fixedGlow, Glow(g.part), pos, site.yaw);
+            if (g.solid.mesh || g.solidGlow)
+            {
+                var solid = new GameObject("solid"); solid.transform.SetParent(root.transform, false);
+                if (g.solid.mesh) Place(solid.transform, g.solid, pos, site.yaw, 1, null, null);
+                if (g.solidGlow) PlaceMesh(solid.transform, g.solidGlow, Glow(g.part), pos, site.yaw);
+                if (g.hideWhenOwned) gateSolids.Add((solid, g.part));
+            }
+            foreach (var pc in g.solid.colliders) cols.Add(WorldCollision.ToWorld(pc, pos, site.yaw, 1));
+        }
+        static void PlaceMesh(Transform parent, Mesh mesh, Material mat, Vector3 pos, float yaw)
+        {
+            pos.y += Terrain.Height(pos.x, pos.z);
+            var g = new GameObject(mesh.name); g.transform.SetParent(parent, false);
+            g.transform.localPosition = Sim.ToUnity(pos); g.transform.localRotation = Sim.YawToUnity(yaw);
+            g.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = g.AddComponent<MeshRenderer>(); mr.sharedMaterial = mat; mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
         void Place(Transform parent, PropModel m, Vector3 pos, float yaw, float scale, List<WorldCollision.Col> cols, List<WorldCollision.Surf> surfs)
         {
             if (m == null || m.mesh == null) return;
+            pos.y += Terrain.Height(pos.x, pos.z);   // everything authored at y = 0 sits on the terrain
             var g = new GameObject(m.mesh.name);
             g.transform.SetParent(parent, false);
             g.transform.localPosition = Sim.ToUnity(pos); g.transform.localRotation = Sim.YawToUnity(yaw); g.transform.localScale = Vector3.one * scale;
@@ -177,8 +310,12 @@ namespace Soul
             for (int i = 0; i <= n; i++) for (int j = 0; j <= n; j++)
             {
                 float x = x0 + i * CELL, z = z0 + j * CELL; int idx = i * s + j;
-                verts[idx] = Sim.ToUnity(new Vector3(x, -.012f, z)); nor[idx] = Vector3.up;
-                cols[idx] = Regions.GroundColor(x, z, w).linear;
+                // interior vertices jitter (hash of the global grid point) so patterns do not stair-step; chunk edges stay put
+                if (i > 0 && i < n && j > 0 && j < n) { int gx = Mathf.RoundToInt(x), gz = Mathf.RoundToInt(z); x += (Hash(gx, gz, 5) % 1000 / 1000f - .5f) * .5f; z += (Hash(gx, gz, 6) % 1000 / 1000f - .5f) * .5f; }
+                float y = Terrain.Height(x, z);
+                float gxs = Terrain.Height(x + .7f, z) - Terrain.Height(x - .7f, z), gzs = Terrain.Height(x, z + .7f) - Terrain.Height(x, z - .7f);
+                verts[idx] = Sim.ToUnity(new Vector3(x, y - .012f, z)); nor[idx] = Sim.ToUnity(new Vector3(-gxs / 1.4f, 1, -gzs / 1.4f).normalized);
+                cols[idx] = Regions.GroundColor(x, z).linear;
             }
             var tris = new List<int>();
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++)
@@ -190,7 +327,15 @@ namespace Soul
                 tris.Add(a); tris.Add(c); tris.Add(d); tris.Add(a); tris.Add(b); tris.Add(c);
             }
             if (tris.Count == 0) return;
+            var gd = GroundDetail.Decals(x0, z0, CHUNK);   // Codex-owned ground details (cracks, markings, litter)
+            if (gd)
+            {
+                var dg = new GameObject("ground detail"); dg.transform.SetParent(parent, false);
+                dg.AddComponent<MeshFilter>().sharedMesh = gd; var dr = dg.AddComponent<MeshRenderer>(); dr.sharedMaterial = propMat; dr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            BuildWater(parent, x0, z0);
             var mesh = new Mesh { name = "ground", vertices = verts, colors = cols, normals = nor, triangles = tris.ToArray() };
+            if (verts.Length > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
             mesh.RecalculateBounds();
             var g = new GameObject("ground"); g.transform.SetParent(parent, false);
             g.AddComponent<MeshFilter>().sharedMesh = mesh;

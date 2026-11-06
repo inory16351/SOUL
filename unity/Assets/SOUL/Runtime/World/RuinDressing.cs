@@ -31,7 +31,17 @@ namespace Soul
             readonly List<WorldCollision.Surf> surfs = new List<WorldCollision.Surf>();
             readonly List<WorldCollision.Col> cols = new List<WorldCollision.Col>();
             const float BodyLow = .2f, BodyHigh = 2.05f, WallSlack = .3f;
+            // inner face of a building's outer frame (0 = no frame), see LeavesFrame
+            public float frameX, frameZ;
             public Guard(PropModel p) { Refresh(p); }
+            /// would a piece hanging from `from` inside the building pass through the outer frame to `to`?
+            public bool LeavesFrame(Vector3 from, Vector3 to)
+            {
+                if (frameX <= 0) return false;
+                const float edge = .25f;   // slab edges stop just short of, or level with, the frame
+                if (Mathf.Abs(from.x) > frameX + edge || Mathf.Abs(from.z) > frameZ + edge) return false;
+                return Mathf.Abs(to.x) > frameX || Mathf.Abs(to.z) > frameZ;
+            }
             public void Refresh(PropModel p)
             {
                 surfs.Clear(); cols.Clear();
@@ -291,7 +301,10 @@ namespace Soul
                     Vector3 hinge = p + up * (top - thick * .5f);
                     Vector3 centre = hinge + n * (Mathf.Cos(ang) * l * .5f) - up * (Mathf.Sin(ang) * l * .5f);
                     Vector3 size = alongX ? V(w, thick * .8f, l) : V(l, thick * .8f, w);
-                    if (Block(b, g, centre, size, d, sign * ang, Pick(b, .2f)))
+                    // the void must really be open: a plate may not swing out through the building's frame
+                    Vector3 tip = hinge + n * (Mathf.Cos(ang) * l), side = d * (w * .5f);
+                    if (!g.LeavesFrame(hinge, tip + side) && !g.LeavesFrame(hinge, tip - side)
+                        && Block(b, g, centre, size, d, sign * ang, Pick(b, .2f)))
                         for (int i = -1; i <= 1; i += 2)
                             b.Beam(hinge + d * i * w * .3f, centre + d * i * w * .3f - up * .02f, .015f, .012f, 3, C(Rust));
                 }
@@ -500,7 +513,7 @@ namespace Soul
         /// ApartmentRuin / CollapsedTower / small RuinedBuilding shell (14 x 10 m frame)
         internal static void Building(MeshBuilder b, PropModel p, int standing, bool tower)
         {
-            var g = new Guard(p);
+            var g = new Guard(p) { frameX = 6.6f, frameZ = 4.85f };
             const float Storey = 3.2f;
             float yTop = (standing - 1) * Storey + 2.96f;
             float xMax = tower ? -.4f : 7f;   // the tower's crown rests on the right half
@@ -514,7 +527,8 @@ namespace Soul
             if (!tower)
             {
                 BrokenTop(b, g, V(1, yBase + 2.1f, -.5f), V(3.6f, yBase + 2.1f, -.5f), .18f, .7f);
-                BrokenTop(b, g, V(5.4f, yBase + 1.3f, -.5f), V(6.8f, yBase + 1.3f, -.5f), .18f, .6f);
+                // the right-hand partition only exists on the ground floor
+                if (standing == 1) BrokenTop(b, g, V(5.4f, yBase + 1.3f, -.5f), V(6.8f, yBase + 1.3f, -.5f), .18f, .6f);
             }
             for (int side = -1; side <= 1; side += 2)
                 for (int j = 0; j < 3; j++)

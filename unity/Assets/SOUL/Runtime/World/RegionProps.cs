@@ -245,11 +245,76 @@ namespace Soul
 
         public static PropModel RubblePile(int seed)
         {
+            // Irregular heap: 2-5 overlapping lumps (one walkable mound surface each, h <= .32 r keeps the
+            // slope walkable) meshed as one jittered height field, then broken slabs, rocks, bricks and
+            // rebar dropped on top. No circular outline, no regular facet grid.
             var b = new MeshBuilder(seed); var p = new PropModel();
-            float r = b.Range(1.8f, 3.4f), h = b.Range(.45f, Mathf.Min(1.2f, r * .34f));
-            // Max dome derivative is 2h/r; keep even the rim below the slope limit.
-            RuinStructures.Mound(b, p, r, h, 0x6a6762, 8, 28);
-            p.mesh = b.Build("rubble-pile"); p.footprint = r; p.height = h;
+            float main = b.Range(1.5f, 2.7f), along = b.Range(0, Mathf.PI * 2);
+            var lumps = new List<Vector4> { new Vector4(0, 0, main, b.Range(.38f, Mathf.Min(1.05f, main * .32f))) };
+            int n = b.RangeInt(2, 6);
+            for (int i = 1; i < n; i++)
+            {
+                float a = along + (i % 2 == 0 ? Mathf.PI : 0) + b.Range(-.9f, .9f), d = main * b.Range(.5f, 1.05f);
+                float r = main * b.Range(.4f, .78f);
+                lumps.Add(new Vector4(Mathf.Sin(a) * d, Mathf.Cos(a) * d, r, Mathf.Min(r * .32f, b.Range(.18f, .7f))));
+            }
+            float H(float x, float z)
+            {
+                float best = 0;
+                foreach (var l in lumps) { float dx = x - l.x, dz = z - l.y, q = (dx * dx + dz * dz) / (l.z * l.z); if (q < 1) best = Mathf.Max(best, l.w * (1 - q)); }
+                return best;
+            }
+            float R = 0; foreach (var l in lumps) R = Mathf.Max(R, new Vector2(l.x, l.y).magnitude + l.z);
+            float ox = b.Range(0, 50), oz = b.Range(0, 50);
+            const float STEP = .42f; int cells = Mathf.CeilToInt(2 * R / STEP);
+            var vtx = new Vector3[cells + 1, cells + 1];
+            for (int i = 0; i <= cells; i++) for (int j = 0; j <= cells; j++)
+            {
+                float x = -R + i * STEP + b.Range(-.15f, .15f), z = -R + j * STEP + b.Range(-.15f, .15f), h = H(x, z);
+                float rough = (Mathf.PerlinNoise(x * 1.7f + ox, z * 1.7f + oz) - .5f) * .16f * Mathf.Min(1, h / .15f);
+                vtx[i, j] = V(x, h > .005f ? h + rough - .02f : -.03f, z);
+            }
+            for (int i = 0; i < cells; i++) for (int j = 0; j < cells; j++)
+            {
+                Vector3 a = vtx[i, j], c1 = vtx[i + 1, j], c2 = vtx[i + 1, j + 1], c3 = vtx[i, j + 1];
+                if (Mathf.Max(Mathf.Max(a.y, c1.y), Mathf.Max(c2.y, c3.y)) < .02f) continue;
+                for (int t = 0; t < 2; t++)
+                {
+                    Vector3 q0 = a, q1 = t == 0 ? c2 : c3, q2 = t == 0 ? c1 : c2;
+                    float y = (q0.y + q1.y + q2.y) / 3;
+                    int hex = b.Chance(.1f) ? 0x3b3835 : b.Chance(.12f) ? 0x8a857c : b.Chance(.06f) ? 0x6e4a33 : 0x6a6762;
+                    var col = b.Jitter(hex, .12f) * (.78f + .3f * Mathf.Clamp01(y / .6f));   // sooty at the foot, paler on top
+                    b.Tri(q0, q1, q2, col);
+                }
+            }
+            // debris lying on the heap
+            int pieces = Mathf.RoundToInt(R * R * 1.6f) + 4;
+            for (int k = 0; k < pieces; k++)
+            {
+                var l = lumps[b.RangeInt(0, lumps.Count)]; float a = b.Range(0, Mathf.PI * 2), d = l.z * Mathf.Sqrt(b.Rand()) * .85f;
+                float x = l.x + Mathf.Sin(a) * d, z = l.y + Mathf.Cos(a) * d, y = H(x, z);
+                float kind = b.Rand();
+                if (kind < .38f)
+                {   // broken slab fragment, tilted
+                    b.Push(); b.Translate(x, y + .04f, z); b.RotateY(b.Range(0, Mathf.PI * 2)); b.RotateX(b.Range(-.45f, .45f)); b.RotateZ(b.Range(-.3f, .3f));
+                    b.Box(Vector3.zero, V(b.Range(.35f, 1.1f), b.Range(.07f, .16f), b.Range(.25f, .8f)), b.Jitter(b.Chance(.3f) ? 0x8a857c : 0x77726b, .1f), .1f);
+                    b.Pop();
+                }
+                else if (kind < .78f) b.Rock(V(x, y + .03f, z), b.Range(.1f, .32f), b.Jitter(b.Chance(.25f) ? 0x4a4642 : 0x625e58, .1f), .35f, b.Range(.55f, 1f));
+                else if (kind < .92f)
+                {   // brick / block
+                    b.Push(); b.Translate(x, y + .05f, z); b.RotateY(b.Range(0, Mathf.PI)); b.RotateX(b.Range(-.3f, .3f));
+                    b.Box(Vector3.zero, V(.22f, .1f, .11f), b.Jitter(b.Chance(.5f) ? 0x7a4c3a : 0x5f5a54, .12f), .1f); b.Pop();
+                }
+                else
+                {   // bent rebar sticking out
+                    var s = V(x, y, z); var m = s + V(b.Range(-.3f, .3f), b.Range(.25f, .6f), b.Range(-.3f, .3f));
+                    b.Beam(s, m, .018f, .018f, 4, b.Jitter(0x5a3a28, .1f)); b.Beam(m, m + V(b.Range(-.35f, .35f), b.Range(-.05f, .2f), b.Range(-.35f, .35f)), .016f, .016f, 4, b.Jitter(0x5a3a28, .1f));
+                }
+            }
+            foreach (var l in lumps) p.surfaces.Add(PropSurface.Mound(l.x, l.y, l.z, l.w));
+            float top = 0; foreach (var l in lumps) top = Mathf.Max(top, l.w);
+            p.mesh = b.Build("rubble-pile"); p.footprint = R; p.height = top + .3f;
             return p;
         }
 

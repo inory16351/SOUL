@@ -16,13 +16,24 @@ namespace Soul
             { "focus", new[] { "######", "#....#", "#....#", "##..##", ".####.", "......", "......" } },
             { "hurt",  new[] { "......", "##....", ".###..", "...###", ".###..", "##....", "......" } },
             { "wide",  new[] { ".####.", "##..##", "#.##.#", "#.##.#", "#....#", "##..##", ".####." } },
+            { "curious", new[] { ".####.", "##..##", "#..###", "#..###", "#....#", "##..##", ".####." } },
+            { "sad",   new[] { "......", "##....", ".##...", "..####", "..#..#", "..####", "......" } },
+            { "angry", new[] { "#.....", "##....", ".####.", "##..##", "#....#", "##..##", ".####." } },
+            { "sleep", new[] { "......", "......", "......", "#....#", ".####.", "......", "......" } },
         };
-        static readonly HashSet<string> MIRROR = new HashSet<string> { "hurt" };
+        static readonly HashSet<string> MIRROR = new HashSet<string> { "hurt", "sad", "angry" };
         static readonly Dictionary<string, string[]> MOUTH = new Dictionary<string, string[]>
         {
             { "idle", new[] { "######" } }, { "blink", new[] { "######" } }, { "focus", new[] { "########" } },
             { "happy", new[] { "#......#", ".######." } }, { "hurt", new[] { "#.#.#.#", ".#.#.#." } }, { "wide", new[] { ".####.", "#....#", ".####." } },
+            { "curious", new[] { ".##.", "#..#", ".##." } }, { "sad", new[] { ".######.", "#......#" } },
+            { "angry", new[] { "########", "#.#..#.#" } }, { "sleep", new[] { "..##.." } },
         };
+        // 점점 늘어나는 표정: only 0_0 and blinking at the start; each purified zone unlocks the next face
+        // (기획_결정사항.md order). Locked faces fall back to the idle 0_0.
+        public static readonly string[] ORDER = { "hurt", "wide", "focus", "curious", "happy", "sad", "angry", "sleep" };
+        public static int unlocked;
+        public static bool Unlocked(string m) { if (m == "idle" || m == "blink") return true; int i = System.Array.IndexOf(ORDER, m); return i >= 0 && i < unlocked; }
         const int GRID_W = 24, GRID_H = 16, CELL = 10, W = GRID_W * CELL, H = GRID_H * CELL;
         static readonly Color32 BG = new Color32(0x01, 0x02, 0x05, 255), OFF = new Color32(0x08, 0x14, 0x1c, 255), ON = new Color32(0x7f, 0xe3, 0xff, 255), CORE = new Color32(0xe6, 0xfb, 0xff, 255);
 
@@ -67,11 +78,14 @@ namespace Soul
             }
             tex.SetPixels32(px); tex.Apply(false);
         }
-        public void Set(string m, float seconds = 0) { mood = m; hold = seconds; }
+        public void Set(string m, float seconds = 0) { if (!Unlocked(m)) return; mood = m; hold = seconds; }
+        /// show a face regardless of unlocks (debug preview)
+        public void Preview(string m, float seconds = 2) { mood = m; hold = seconds; }
         public void Update(float dt, string state)
         {
             t += dt; if (hold > 0) hold -= dt;
             string b = hold > 0 ? mood : state;
+            if (hold <= 0 && !Unlocked(b)) b = "idle";
             if (b == "idle")
             {
                 if (t > blinkAt && blinkT < 0) blinkT = 0;
