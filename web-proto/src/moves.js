@@ -50,21 +50,26 @@ const landHold = { pelvis: [18, -10, 0], spine: [12, 0, 0], chest: [10, 0, 0], n
 const finisher = { pelvis: [10, -22, 0], spine: [6, -6, 0], chest: [6, -26, 0], neck: [0, 14, 0], head: [-4, 14, 0], ...lungeR, ...L_back };
 
 export const moves = {
-  // Body-driven horizontal cut: the whole body coils left with the arm already EXTENDED in front,
-  // then unwinds ~135 deg while the straight arm + blade sweep a wide level arc at shoulder height.
-  // The swing comes from the body, not from unfolding the elbow, so the reach is arm + blade.
+  // Sling cut: the arm folds tight across the chest and the blade is cocked back over the LEFT
+  // shoulder, the upper body coils left. Using the upper body as the axis it unwinds ~115 deg:
+  // the upper arm leads around, the folded forearm lags, then whips straight just before contact
+  // (like a sling), and the extended blade carries on to the right rear where hit 2 begins.
   light1: {
-    label: 'Crescent sweep', key: 'A', duration: .80, blend: .08, active: [.17, .40], impact: .26, buffer: [.30, .76], chain: 'light2', chainAt: .50,
-    yaw: [[0, 0], [.14, -70], [.20, -75], [.36, 60], [.52, 60], [.80, 0]],
-    steps: [['R', .16, .30], ['L', .50, .72]],
-    root: [[0, 0], [.16, 0], [.30, .50], [.38, .58], [.80, .58]],
+    label: 'Sling cut', key: 'A', duration: .80, blend: .08, active: [.21, .40], impact: .275, lag: 0, buffer: [.30, .76], chain: 'light2', chainAt: .50,
+    // torso turns first and BRAKES before contact (kinetic chain), then barely drifts
+    // Whip / kinetic chain: the torso turns moderately (~100 deg over 0.12 s) and brakes before
+    // contact; only the blade accelerates at the end. Little extra chest twist on top of the yaw,
+    // so the torso never spins as fast as the blade.
+    yaw: [[0, 0], [.12, -36], [.19, -42], [.31, 8], [.42, 18], [.55, 18], [.80, 0]], dyn: .3, whipHz: 28,
+    steps: [['R', .17, .31], ['L', .50, .72]],
+    root: [[0, 0], [.17, 0], [.31, .50], [.39, .58], [.80, .58]],
     keys: [
       key(0),
-      key(.14, { pelvis: [4, -8, 0], spine: [0, -8, 0], chest: [-2, -26, 0], neck: [0, 16, 0], head: [-4, 16, 0], ...L_back }, [0, .02, -.03], 'in'),
-      key(.20, { pelvis: [4, -10, 0], spine: [0, -10, 0], chest: [-2, -30, 0], neck: [0, 18, 0], head: [-4, 18, 0], Rthigh: [-28, 0, -3], Rshin: [40, 0, 0], ...L_back }, [.02, .02, -.04]),
-      key(.27, { pelvis: [6, 14, 0], spine: [2, 6, 0], chest: [0, 22, 0], neck: [0, -10, 0], head: [-4, -10, 0], ...lungeR, ...L_out }, [0, -.08, .12], 'out'),
-      key(.36, { ...l1Hold, pelvis: [6, 20, 0], spine: [2, 10, 0], chest: [0, 34, 0] }, [0, -.10, .13]),
-      key(.52, { ...l1Hold, pelvis: [6, 20, 0], spine: [2, 10, 0], chest: [0, 34, 0] }, [0, -.09, .12]),
+      key(.14, { pelvis: [4, -5, 0], spine: [-2, -4, 0], chest: [-4, -12, 0], neck: [0, 10, 0], head: [-4, 10, 0], ...L_back }, [0, .03, -.03], 'in'),
+      key(.20, { pelvis: [4, -6, 0], spine: [-2, -4, 0], chest: [-4, -14, 0], neck: [0, 12, 0], head: [-4, 12, 0], Rthigh: [-28, 0, -3], Rshin: [40, 0, 0], ...L_back }, [.02, .03, -.04]),
+      key(.27, { pelvis: [6, -3, 0], spine: [2, -2, 0], chest: [0, -6, 0], neck: [0, 4, 0], head: [-4, 4, 0], ...lungeR, ...L_out }, [0, -.08, .12], 'out'),
+      key(.36, { ...l1Hold, pelvis: [6, 8, 0], spine: [2, 4, 0], chest: [0, 14, 0] }, [0, -.10, .13]),
+      key(.52, { ...l1Hold, pelvis: [6, 8, 0], spine: [2, 4, 0], chest: [0, 14, 0] }, [0, -.09, .12]),
       key(.66, { pelvis: [6, 8, 0], chest: [4, 10, 0], Lthigh: [0, 0, 5], Lshin: [38, 0, 0] }, [0, -.05, .03]),
       key(.80),
     ],
@@ -212,14 +217,21 @@ const L2_END = [[-.55, -.12, .83], [-.90, -.08, .43], [-.90, -.08, .43]];
 const CHARGE = [[.38, -.66, -.65], [.35, -.63, -.69], [.40, -.33, -.86]];
 const OUT = [[.90, -.40, .15], [.90, -.42, .12], [.88, -.45, .10]];
 const ARM_GUIDES = {
-  // arm stays extended (elbow ~10-15 deg) the whole time; directions are relative to the body,
-  // the yaw curve turns the body -75 -> +60 deg, so the straight arm sweeps a wide level arc
+  // whip: fold across the chest with the blade back over the left shoulder; the upper arm swings
+  // forward first and then slows, while the blade pivots on the elbow around the OUTSIDE (left)
+  // and accelerates past it — the hand moves a small arc, the tip a huge fast one (~2500 deg/s
+  // at contact). Upper arm turns ~100 deg in total, the blade ~190 deg.
   light1: [idleA(0),
-    A(.07, [-.10, -.45, .89], [-.40, -.25, .88], [-.40, -.25, .88]),
-    A(.14, [-.35, -.05, .94], [-.55, -.02, .83], [-.55, -.02, .83]),     // extended in front, body coiled left
-    A(.20, [-.36, -.04, .93], [-.56, -.01, .83], [-.56, -.01, .83]),
-    A(.26, [.30, -.05, .95], [.40, -.05, .92], [.40, -.05, .92]),        // contact: body unwinding, arm straight
-    A(.36, L1_END[0], L1_END[1], L1_END[2]),                              // body turned right, arm out to the right
+    A(.07, [-.10, -.20, .97], [-.50, .40, .77], [-.50, .40, .77]),
+    A(.12, [-.66, .23, .71], [-.80, .30, -.52], [-.80, .30, -.52]),      // folded, blade over the left shoulder
+    A(.18, [-.68, .25, .69], [-.78, .32, -.54], [-.78, .32, -.54]),
+    A(.23, [-.10, .10, .99], [-.90, .25, -.35], [-.90, .25, -.35]),      // torso + upper arm lead, blade still trails folded
+    A(.25, [.10, .05, .99], [-.95, .10, .25], [-.95, .10, .25]),         // upper arm braking, blade swinging out on the left
+    A(.262, [.18, 0, .98], [-.45, 0, .89], [-.45, 0, .89]),              // whip: blade accelerating past the arm
+    A(.274, [.25, -.02, .97], [.30, -.02, .95], [.30, -.02, .95]),       // contact: arm straight, tip at peak speed
+    A(.30, [.55, -.04, .83], [.60, -.05, .80], [.60, -.05, .80]),        // arm + blade in one line, decelerating
+    A(.34, [.80, -.05, .60], [.85, -.05, .52], [.85, -.05, .52]),
+    A(.36, L1_END[0], L1_END[1], L1_END[2]),                              // right rear = where hit 2 starts
     A(.52, [.85, -.07, .52], [.90, -.07, .43], [.90, -.07, .43]),
     A(.66, [.60, -.60, .50], [.55, -.45, .70], [.55, -.45, .70]),
     idleA(.80)],

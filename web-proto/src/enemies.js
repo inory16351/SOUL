@@ -124,7 +124,7 @@ class Enemy {
     } else if (this.state === 'chase') {
       turnTo(yawToP, def.turn);
       const options = def.attacks.filter(a => dist >= a.range[0] && dist <= a.range[1] && !(this.cool[a.name] > 0));
-      if (options.length && this.t > .35 && player.alive && Math.abs(angleTo(root.rotation.y, yawToP)) < .5) {
+      if (options.length && !this.mgr.passive && this.t > .35 && player.alive && Math.abs(angleTo(root.rotation.y, yawToP)) < .5) {
         const a = options[Math.floor(Math.random() * options.length)];
         this.attack = a; this.state = 'windup'; this.t = 0; this.hitPlayer = false;
         const origin = a.atTarget ? player.pos.clone() : root.position.clone().addScaledVector(new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)), a.kind === 'line' ? this.radius * .6 : .1);
@@ -211,13 +211,20 @@ export class EnemyManager {
   constructor(scene, vfx, { bounds = 18, onPlayerHit, onImpact, onKill } = {}) {
     Object.assign(this, { scene, vfx, bounds, onPlayerHit, onImpact, onKill });
     this.list = []; this.wisps = []; this.glow = glowTexture(); this.spawnClock = 1.2; this.wave = 0;
-    this.want = { crawler: 3, warden: 1 };
+    // Nothing spawns on its own: monsters are summoned (keys 1/2, panel buttons). passive = they
+    // follow and take hits but never attack (training-dummy mode for motion tests).
+    this.want = { crawler: 0, warden: 0 }; this.passive = false;
   }
   makeBar() {
     const c = document.createElement('canvas'); c.width = 128; c.height = 14; const g = c.getContext('2d'), tex = new THREE.CanvasTexture(c);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, toneMapped: false })); sprite.scale.set(1.1, .12, 1);
     const set = f => { g.clearRect(0, 0, 128, 14); g.fillStyle = '#000a'; g.fillRect(0, 0, 128, 14); g.fillStyle = '#ff5a3a'; g.fillRect(2, 2, Math.max(0, f) * 124, 10); tex.needsUpdate = true; };
     set(1); return { sprite, set };
+  }
+  // summon at an exact spot (clamped to the arena)
+  spawnAt(type, pos) {
+    const p = pos.clone().setY(0); if (p.length() > this.bounds - 1) p.setLength(this.bounds - 1);
+    const e = new Enemy(this, type, p); this.list.push(e); this.releaseSoul(p.clone().setY(.4), 10, true); return e;
   }
   spawn(type, near) {
     for (let tries = 0; tries < 12; tries++) {

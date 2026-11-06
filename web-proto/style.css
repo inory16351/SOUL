@@ -23,3 +23,17 @@
 #kills{font-size:11px;color:#ffb08a;text-shadow:0 0 6px #ff4a2a88}
 #hurt{position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 55%,#c0141099 100%);z-index:4}
 @media(max-width:760px){#hud{bottom:160px}#hp{width:180px}}
+
+/* Summon panel (monsters only appear when summoned) */
+#summon{position:fixed;top:92px;right:24px;display:flex;flex-direction:column;gap:6px;z-index:6}
+#summon button{display:flex;align-items:center;gap:8px;background:#1a0f0cd9;border:1px solid #ff6a4a55;color:#ffd9cc;font-size:11px;padding:7px 12px;border-radius:6px;text-align:left}
+#summon button b{display:inline-block;min-width:16px;color:#ff8a66;font-size:12px}
+#summon button:hover{border-color:#ff8a66aa}
+#summon button.on{background:#3a1a12;border-color:#ffb08a;color:#fff}
+@media(max-width:760px){#summon{top:64px;right:10px}#summon button{font-size:9px;padding:5px 8px}}
+
+/* Pause overlay (C) */
+#paused{position:fixed;top:92px;left:50%;transform:translateX(-50%);display:none;flex-direction:column;align-items:center;gap:4px;pointer-events:none;z-index:7}
+#paused.on{display:flex}
+#paused b{font-size:20px;letter-spacing:6px;color:#e8f7ff;text-shadow:0 0 12px #2b9dff}
+#paused span{font-size:10px;color:#a9c7d6;background:#0b1620cc;padding:3px 10px;border-radius:10px}

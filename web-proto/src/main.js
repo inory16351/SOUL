@@ -117,7 +117,10 @@ const enemies = new EnemyManager(scene, vfx, {
 const breakables = createBreakables(scene, vfx, 12, BOUNDS - 1);
 const hitSet = new Map();
 const DMG = { light1: 18, light2: 18, light3: 24, heavy: 13, flurry: 11, counter: 40, jump: 0 };
-const AREA = { light1: { r: 2.9, a: 2.5 }, light2: { r: 3.0, a: 2.7 }, light3: { r: 3.1 }, heavy: { r: 3.3 }, flurry: { r: 3.1 }, counter: { r: 3.1, a: 2.8 } };
+// Hit areas are deliberately LARGER than the visible effect (player comfort): radius +~0.7 m,
+// fans ~20% wider than the trail they come with.
+const AREA = { light1: { r: 3.6, a: 3.0 }, light2: { r: 3.7, a: 3.2 }, light3: { r: 3.8 }, heavy: { r: 4.0 }, flurry: { r: 3.8 }, counter: { r: 3.8, a: 3.3 } };
+const HIT = { bladeReach: 1.1, tipExtend: .5, breakReach: .8, wave: 2.6 };
 function areaHits(move) {
   const name = animator.name, area = AREA[name]; if (!area) return;
   const root = character.root, f = new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
@@ -136,11 +139,12 @@ function areaHits(move) {
 // blade sweep (this frame + the arc since last frame) against every machine and breakable
 function bladeHits(move) {
   const name = animator.name, base = character.bladeBase.getWorldPosition(new THREE.Vector3()), tip = character.bladeTip.getWorldPosition(new THREE.Vector3());
+  tip.addScaledVector(tip.clone().sub(base).normalize(), HIT.tipExtend);       // invisible reach past the tip
   const segs = [[base, tip]]; if (previousTip) segs.push([previousTip, tip]); previousTip = tip.clone();
   const heavy = name === 'light3' || name === 'counter' || (name === 'flurry' && animator.time > 1.15);
   for (const [p, q] of segs) {
-    breakables.hit(p, q, .5, character.root.position);
-    for (const h of enemies.hitsAlong(p, q, .85)) {
+    breakables.hit(p, q, HIT.breakReach, character.root.position);
+    for (const h of enemies.hitsAlong(p, q, HIT.bladeReach)) {
       const last = hitSet.get(h.e); if (last !== undefined && !(move.multi && animator.time - last >= move.multi)) continue;
       hitSet.set(h.e, animator.time);
       h.e.damage(DMG[name] ?? 15, character.root.position, heavy);
@@ -152,6 +156,21 @@ function bladeHits(move) {
 // HUD: health bar + hurt vignette
 const hud = document.createElement('div'); hud.id = 'hud'; hud.innerHTML = '<div id="hp"><i></i><span></span></div><div id="kills"></div>'; document.body.append(hud);
 const vignette = document.createElement('div'); vignette.id = 'hurt'; document.body.append(vignette);
+// Summoning (monsters no longer spawn on their own): at the cursor, or 4 m in front.
+let paused = false, stepFrames = 0;
+const pauseTag = document.createElement('div'); pauseTag.id = 'paused'; pauseTag.innerHTML = '<b>PAUSED</b><span>C 다시 재생 · . 한 프레임 진행</span>'; document.body.append(pauseTag);
+function togglePause() { paused = !paused; stepFrames = 0; pauseTag.classList.toggle('on', paused); mouse.right = false; }
+function summon(type) {
+  const root = character.root, p = cursorPoint() ?? root.position.clone().add(new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)).multiplyScalar(4));
+  if (p.distanceTo(root.position) < 1.6) p.copy(root.position).add(p.clone().sub(root.position).setY(0).setLength(1.6));
+  enemies.spawnAt(type, p);
+}
+function clearMonsters() { for (const e of enemies.list) if (e.alive) e.die(); }
+function togglePassive() { enemies.passive = !enemies.passive; summonBar.querySelector('[data-a=passive]').classList.toggle('on', enemies.passive); cue(enemies.passive ? '허수아비 모드: 몬스터가 공격하지 않음' : '몬스터 공격 켜짐', 1.4); }
+const summonBar = document.createElement('div'); summonBar.id = 'summon';
+summonBar.innerHTML = '<button data-a="crawler"><b>1</b>하운드 소환</button><button data-a="warden"><b>2</b>워든 소환</button><button data-a="clear"><b>0</b>전부 제거</button><button data-a="passive"><b>P</b>허수아비 모드</button>';
+summonBar.addEventListener('click', e => { const a = e.target.closest('button')?.dataset.a; if (a === 'crawler' || a === 'warden') summon(a); else if (a === 'clear') clearMonsters(); else if (a === 'passive') togglePassive(); e.currentTarget.blur(); });
+document.body.append(summonBar);
 
 function start(name) { connected = false; previousTip = null; vfx.resetTrail(); return animator.play(name); }
 const COOLDOWN = { KeyQ: 4, KeyW: 3, KeyE: 5, KeyR: 9, Space: 1.1, KeyF: .8 };
@@ -183,8 +202,14 @@ window.addEventListener('keydown', e => {
   if (e.repeat) return;
   if (e.code === 'KeyA') attack();
   else if (e.code in COOLDOWN) skill(e.code);
+  else if (e.code === 'Digit1') summon('crawler');
+  else if (e.code === 'Digit2') summon('warden');
+  else if (e.code === 'Digit0') clearMonsters();
+  else if (e.code === 'KeyP') togglePassive();
   else if (e.code === 'KeyH') getHit();
-  else if (e.code === 'KeyC') toggleCamera();
+  else if (e.code === 'KeyC') togglePause();
+  else if (e.code === 'Period' && paused) stepFrames += 1;
+  else if (e.code === 'KeyV') toggleCamera();
 });
 window.addEventListener('blur', () => { mouse.right = false; });
 
@@ -241,7 +266,9 @@ document.body.append(bar);
 // ---------- automation / audit ----------
 window.__proto = { audit, state: () => animator.name, play: preview, setTimeScale, moves: Object.keys(moves), colliders: v => { character.colliders.visible = !!v; },
   inspect: () => ({ time: animator.time, root: character.root.position.toArray(), hitCount, speed: animator.speed, stats: { ...animator.stats } }),
-  input: { attack, skill, moveTo: (x, z) => { moveTarget = new THREE.Vector3(x, 0, z); } } };
+  input: { attack, skill, moveTo: (x, z) => { moveTarget = new THREE.Vector3(x, 0, z); } },
+  // run the game synchronously (works with the pane hidden): seconds of 120 Hz substeps
+  simulate: (seconds, input = new THREE.Vector3()) => { const n = Math.round(seconds * 120); for (let i = 0; i < n; i++) worldStep(1 / 120, input); } };
 function audit(list = Object.keys(moves)) {
   const out = {}, zero = new THREE.Vector3();
   for (const name of list) {
@@ -265,8 +292,10 @@ let previousTime = performance.now(), lastName = animator.name;
 document.addEventListener('visibilitychange', () => { previousTime = performance.now(); });
 function frame(now) {
   requestAnimationFrame(frame); const realDt = Math.min((now - previousTime) / 1000, .05); previousTime = now; realTime += realDt;
+  // Pause (C): the world freezes, the camera keeps rendering; '.' advances one 1/60 s frame.
+  if (paused) { const step = stepFrames > 0 ? 1 / 60 : 0; stepFrames = Math.max(0, stepFrames - 1); if (!step) { camera.update(0, character.root.position); composer.render(); return; } }
   for (let i = timers.length - 1; i >= 0; i--) if (timers[i][0] <= realTime) { const fn = timers[i][1]; timers.splice(i, 1); fn(); }
-  let dt = realDt * timeScale; if (hitStop > 0) { hitStop = Math.max(0, hitStop - realDt); dt = 0; }
+  let dt = paused ? 1 / 60 : realDt * timeScale; if (hitStop > 0) { hitStop = Math.max(0, hitStop - realDt); dt = 0; }
   if (mouse.right) setMoveTarget(false);
   // click-to-move: steer toward the target, stop on arrival; attacks cancel movement
   let input = new THREE.Vector3();
@@ -276,13 +305,21 @@ function frame(now) {
   }
   let remaining = dt;
   do {
-    const step = Math.min(remaining, 1 / 120); animator.update(step, input, true);
+    const step = Math.min(remaining, 1 / 120); worldStep(step, input);
+    remaining -= step;
+  } while (remaining > 1e-7);
+  frameTail(realDt);
+}
+// One simulation substep: animation, hits, waves, enemies, effects. Also used by
+// __proto.simulate() so tests run without a visible browser (rAF stops when hidden).
+function worldStep(step, input) {
+    animator.update(step, input, true);
     if (animator.name !== lastName) { connected = false; previousTip = null; lastName = animator.name; hitSet.clear(); }
     const move = animator.move, active = !!move?.active && animator.time >= move.active[0] && animator.time <= move.active[1];
     if (active && !move.parry) { bladeHits(move); if (animator.time >= (move.impact ?? move.active[0]) - .02) areaHits(move); } else if (!active) previousTip = null;
     for (const w of vfx.waves) {
       w.hitSet ??= new Set(); const c = w.group.position;
-      for (const e of enemies.list) if (e.alive && !w.hitSet.has(e) && Math.hypot(c.x - e.root.position.x, c.z - e.root.position.z) < 1.9 + e.radius * .5) { w.hitSet.add(e); e.damage(30, character.root.position, true); vfx.burst(e.center(), 24, 1.2); camera.shake(.06); }
+      for (const e of enemies.list) if (e.alive && !w.hitSet.has(e) && Math.hypot(c.x - e.root.position.x, c.z - e.root.position.z) < HIT.wave + e.radius * .5) { w.hitSet.add(e); e.damage(30, character.root.position, true); vfx.burst(e.center(), 24, 1.2); camera.shake(.06); }
       breakables.hit(c.clone().setY(.2), c.clone().setY(1.2), .9, c);
     }
     enemies.update(step, player); breakables.update(step);
@@ -296,8 +333,8 @@ function frame(now) {
     secondary.update(step, animator.worldTime, animator.speed); dummy.update(step);
     vfx.update(step, active, animator.name === 'heavyCharge' ? animator.charge : 0);
     laser.update(step, active ? 1 : animator.name === 'heavyCharge' ? .6 : 0);
-    remaining -= step;
-  } while (remaining > 1e-7);
+}
+function frameTail(realDt) {
   const state = /^(hit|stagger)$/.test(animator.name) ? 'hurt' : animator.name === 'heavyCharge' ? 'wide' : animator.busy && animator.name !== 'jump' ? 'focus' : 'idle';
   face.update(realDt, state);
   if (character.root.position.length() > BOUNDS) character.root.position.setLength(BOUNDS);

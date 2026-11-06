@@ -126,7 +126,7 @@ export class Animator {
     const v = this.tipVel ?? new V3(), r = this.tipRel ?? new V3(0, 0, 1);
     // full strength through wind-up and the cut, calmer once the strike has resolved
     const m = this.move, after = m?.active ? this.time - m.active[1] : -1;
-    const on = this.busy && !m.roll ? (after < .12 ? 1 : THREE.MathUtils.lerp(1, .3, Math.min(1, (after - .12) / .12))) : 0;
+    const on = (this.busy && !m.roll ? (after < .12 ? 1 : THREE.MathUtils.lerp(1, .3, Math.min(1, (after - .12) / .12))) : 0) * (m?.dyn ?? 1);
     const rr = Math.max(.15, r.x * r.x + r.z * r.z), omega = (r.z * v.x - r.x * v.z) / rr;   // rad/s about +Y (+ = turning right)
     const speed = v.length();
     const targets = {
@@ -364,7 +364,7 @@ export class Animator {
     if (!busy && (this.runW ?? 0) > 0) this.runBlend = this.runW;
     if (gs) {
       const time = busy ? this.time : 0, frame = move?.weaponSpace === 'chest' ? j.chest.matrixWorld : root.matrixWorld;
-      const lagF = busy ? LAG_F : 0, lagD = busy ? LAG_D : 0;
+      const lagF = busy ? LAG_F : 0, lagD = busy ? (move.lag ?? LAG_D) : 0;
       const gu = new V3(), gf = new V3(), gd = new V3(), t2 = new V3();
       sampleKey(gs, 'u', time, gu); sampleKey(gs, 'd', Math.max(0, time - lagD), gd); gf.copy(gd);
       const tipAt = tt => { const a = new V3(), c = new V3(); sampleKey(gs, 'u', tt, a); sampleKey(gs, 'd', Math.max(0, tt - lagD), c); return a.multiplyScalar(UPPER).addScaledVector(c, FORE + BLADE_END); };
@@ -375,7 +375,9 @@ export class Animator {
       for (const v of [gu, gf, gd]) v.transformDirection(frame);
       const w = busy ? smooth(this.blend) : 1;
       slerpDir(u, gu, w); slerpDir(f, gf, w); slerpDir(d, gd, w);
-      this.springDirs(u, d, dt); f.copy(d);
+      // stiffer follow while a strike is live so whips land on time; softer elsewhere
+      const live = busy && move.active && this.time >= move.active[0] - .08 && this.time <= move.active[1];
+      this.springDirs(u, d, dt, live ? (move.whipHz ?? 17) : 11); f.copy(d);
     }
     if (busy && move.yaw) { const om = (curveAt(move.yaw, this.time + 1 / 240) - curveAt(move.yaw, this.time)) * 240 * rad; vel.add(new V3(0, om, 0).cross(S.clone().addScaledVector(u, UPPER).addScaledVector(f, FORE).addScaledVector(d, BLADE_END).sub(root.position))); }
     limitAngle(d, u, 150); f.copy(d);
@@ -473,11 +475,15 @@ export class Animator {
   }
   // Critically damped 2nd-order follow (≈11 Hz): the arm accelerates out of every key and
   // decelerates into it instead of changing speed instantly.
-  springDirs(u, d, dt) {
+  springDirs(u, d, dt, hz = 11) {
     if (!(dt > 0)) return;
-    const S = this.armSpring ??= { u: u.clone(), d: d.clone(), vu: new V3(), vd: new V3() }, w = 2 * Math.PI * 11;
+    const S = this.armSpring ??= { u: u.clone(), d: d.clone(), vu: new V3(), vd: new V3() }, w = 2 * Math.PI * hz;
     for (const [x, v, target] of [[S.u, S.vu, u], [S.d, S.vd, d]]) {
-      v.addScaledVector(target.clone().sub(x).multiplyScalar(w * w).addScaledVector(v, -2 * w), dt); x.addScaledVector(v, dt).normalize(); target.copy(x);
+      // exact critically damped step (stable at any stiffness): e(t) = (e0 + (v0 + w e0) t) e^-wt
+      const e0 = x.clone().sub(target), f = v.clone().addScaledVector(e0, w), k = Math.exp(-w * dt);
+      const e1 = e0.clone().addScaledVector(f, dt);
+      v.copy(f).addScaledVector(e1, -w).multiplyScalar(k);
+      x.copy(target).addScaledVector(e1, k).normalize(); target.copy(x);
     }
   }
   resetSpring() { this.armSpring = null; this.accel = null; this.hinge = null; this.hingeL = null; this.roll = 0; }

@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, extname, sep } from 'node:path';
 
@@ -7,6 +7,17 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 const server = http.createServer(async (req, res) => {
   try {
+    // Dev-only export sink (Unity port): POST /__export/<name>.json from this machine only,
+    // written to web-proto/.export/. See tools/export-unity.js.
+    if (req.method === 'POST' && req.url.startsWith('/__export/')) {
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+      const name = req.url.slice('/__export/'.length);
+      if (!local || !/^[a-z0-9_-]+\.json$/i.test(name)) { res.writeHead(403); return res.end('Forbidden'); }
+      const chunks = []; for await (const c of req) chunks.push(c);
+      const dir = resolve(root, '.export'); await mkdir(dir, { recursive: true });
+      await writeFile(resolve(dir, name), Buffer.concat(chunks));
+      res.writeHead(200); return res.end('ok');
+    }
     if (!['GET', 'HEAD'].includes(req.method)) {
       res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end();
     }
