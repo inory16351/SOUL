@@ -57,7 +57,7 @@ namespace Soul
         // Bevelled XY facing; z is its outer face, thickness grows inward. Corner losses
         // stay inside the given rectangle. Closed back prevents see-through chipped edges.
         static void Facing(MeshBuilder b, float x0, float x1, float y0, float y1,
-            float z, float thickness, float chip, Color color)
+            float z, float thickness, float chip, Color color, float bulge = 0)
         {
             float e = Mathf.Sign(z), cut = Mathf.Min(chip, Mathf.Min(x1 - x0, y1 - y0) * .24f);
             float a = cut * b.Range(.5f, 1), d = cut * b.Range(.5f, 1);
@@ -73,7 +73,7 @@ namespace Soul
                 Vector3 insetNext = q + (center - q).normalized * bevel;
                 Vector3 back = p - normal * thickness, backNext = q - normal * thickness;
                 Vector3 edge = p - normal * bevel, edgeNext = q - normal * bevel;
-                T(b, center, inset, insetNext, color, normal);
+                T(b, center + normal * bulge, inset, insetNext, color, normal);
                 Q(b, inset, edge, edgeNext, insetNext, color * .78f, normal);
                 Q(b, edge, back, backNext, edgeNext, color * .64f, (p + q) * .5f - center);
                 T(b, center - normal * thickness, backNext, back, color * .6f, -normal);
@@ -286,49 +286,114 @@ namespace Soul
             }
         }
 
-        /// Aggregate barricade with exposed bars, broken crown blocks and trapped hot cracks.
+        // A standing fracture, sheared toward the wall at its crown. The profile is
+        // star-shaped about its low centre, so the deep notch needs no overlapping fan.
+        static void Shard(MeshBuilder b, float left, float right, float height,
+            float side, float toe, float lean, float thickness, Color color)
+        {
+            float width = right - left, shear = b.Range(-.13f, .13f) * width;
+            Vector3 P(float u, float y) => V(left + width * (.14f + .72f * u) + shear * y / height,
+                y, side * (toe - lean * y / height));
+            var rim = new[] { P(0, 0), P(1, 0), P(1, height * .72f),
+                P(.78f, height), P(.49f, height * b.Range(.61f, .77f)),
+                P(.22f, height * b.Range(.79f, .98f)), P(0, height * .68f) };
+            Vector3 center = P(.5f, height * .35f), inward = V(0, 0, -side * thickness);
+            Vector3 normal = V(0, lean / height, side).normalized;
+            for (int i = 0; i < rim.Length; i++)
+            {
+                Vector3 a = rim[i], d = rim[(i + 1) % rim.Length];
+                T(b, center, a, d, color, normal);
+                T(b, center + inward, d + inward, a + inward, color * .62f, -normal);
+                Q(b, a, a + inward, d + inward, d, b.Jitter(color * .78f, .09f),
+                    Vector3.Cross(d - a, normal) * side);
+            }
+            if (height < 1) return;
+            Vector3 p = P(.3f, height * .13f) + normal * .004f;
+            Vector3 q = P(.55f, height * .39f) + normal * .004f;
+            Vector3 r = P(.49f, height * .60f) + normal * .004f;
+            Ribbon(b, p, q, .065f, C(Soot), normal);
+            Ribbon(b, q, r, .045f, C(Soot), normal);
+            Ribbon(b, q, P(.83f, height * .52f) + normal * .004f, .025f, C(RustDark), normal);
+        }
+
+        /// Fractured ridge of concrete, with leaning shards and deep, uneven crown valleys.
         public static void CannonWall(ZoneWorld.Site s, MeshBuilder sb, MeshBuilder sg, float hw, Color glow)
         {
             Color stone = Masonry(s);
-            const int bays = 10;
+            const int bays = 17;
             float step = hw * 2 / bays;
-            sb.Box(V(0, 1.5f, 0), V(hw * 2, 3, 3.3f), stone * .59f);
+            var front = new Vector3[bays + 1];
+            var back = new Vector3[bays + 1];
+            var crown = new Vector3[bays + 1];
+            // Narrow sloping fracture faces replace the broad horizontal tiled cap.
+            for (int i = 0; i <= bays; i++)
+            {
+                float x = -hw + step * (i == 0 || i == bays ? i : i + sb.Range(-.31f, .31f));
+                front[i] = V(x, sb.Range(2.45f, 3.18f), -sb.Range(.86f, 1.25f));
+                back[i] = V(x, sb.Range(2.4f, 3.2f), sb.Range(.82f, 1.23f));
+                crown[i] = V(x, sb.Range(3.12f, 4.08f), sb.Range(-.42f, .42f));
+            }
             for (int i = 0; i < bays; i++)
             {
-                float left = -hw + i * step, right = left + step, x = (left + right) * .5f;
-                float h = sb.Range(3.3f, 4.25f);
-                Slab(sb, left, right, -1.64f, 1.64f, 2.85f, h, sb.Jitter(stone), .32f);
-                for (int side = -1; side <= 1; side += 2)
+                Vector3 a = front[i], d = front[i + 1], r = back[i], t = back[i + 1];
+                Vector3 c = crown[i], n = crown[i + 1];
+                Q(sb, V(a.x, 0, -1.42f), V(d.x, 0, -1.42f), d, a, sb.Jitter(stone * .67f), V(0, 0, -1));
+                Q(sb, V(r.x, 0, 1.42f), V(t.x, 0, 1.42f), t, r, sb.Jitter(stone * .71f), Vector3.forward);
+                T(sb, a, d, c, sb.Jitter(stone * .86f), Vector3.up);
+                T(sb, d, n, c, sb.Jitter(stone * .72f), Vector3.up);
+                T(sb, c, n, t, sb.Jitter(stone * .94f), Vector3.up);
+                T(sb, c, t, r, sb.Jitter(stone * .78f), Vector3.up);
+                Q(sb, V(a.x, 0, -1.42f), V(d.x, 0, -1.42f), V(t.x, 0, 1.42f), V(r.x, 0, 1.42f), stone * .5f, Vector3.down);
+                // Branching seams follow the actual tilted triangular top faces.
+                Vector3 normal = Vector3.Cross(d - a, c - a).normalized;
+                if (normal.y < 0) normal = -normal;
+                Vector3 p = a * .40f + c * .58f + d * .02f + normal * .005f;
+                Vector3 q = (a * .2f + d * .38f + c * .42f) + normal * .005f;
+                Vector3 end = Vector3.Lerp(d, c, .55f) + normal * .005f;
+                Ribbon(sb, p, q, .065f, C(Soot), normal);
+                Ribbon(sb, q, end, .045f, C(Soot), normal);
+                if (i == 4 || i == 12) Ribbon(sg, q + normal * .002f,
+                    Vector3.Lerp(q, end, .64f) + normal * .002f, .016f, glow * .36f, normal);
+                if (sb.Chance(.65f))
                 {
-                    Facing(sb, left, right, .015f, h - .08f, side * 1.78f, .24f, .36f, sb.Jitter(stone, .08f));
-                    Vector3 p = V(x - step * .15f, .28f, side * 1.788f);
-                    Vector3 q = V(x + step * .12f, h * .46f, p.z), r = V(x - step * .18f, h - .28f, p.z);
-                    Ribbon(sb, p, q, .085f, C(Soot), V(0, 0, side));
-                    Ribbon(sb, q, r, .07f, C(Soot), V(0, 0, side));
-                    Ribbon(sb, q, q + V(step * .23f, .32f, 0), .04f, C(Dark), V(0, 0, side));
-                    Stain(sb, x + step * .3f, h - .5f, side * 1.79f, .24f, .83f, C(RustDark));
-                    if (i % 4 == 1)
-                    {
-                        Vector3 hot0 = Vector3.Lerp(p, q, .55f), hot1 = Vector3.Lerp(p, q, .8f);
-                        hot0.z = hot1.z = side * 1.794f;
-                        Ribbon(sg, hot0, hot1, .018f, glow * .43f, V(0, 0, side));
-                    }
-                    if (i % 3 == 0)
-                    {
-                        Facing(sb, x - .55f, x + .55f, .7f, 1.3f, side * 1.796f, .04f, .17f, C(Rust));
-                        for (int k = -1; k <= 1; k += 2)
-                            Stain(sb, x + k * .34f, 1.2f, side * 1.799f, .09f, .35f, C(Soot));
-                    }
-                    Slab(sb, x - .44f, x + .4f, side < 0 ? -1.8f : 1.31f,
-                        side < 0 ? -1.31f : 1.8f, 0, .25f, sb.Jitter(stone * .8f), .16f);
+                    Vector3 root = Vector3.Lerp(c, n, .45f), bend = root + V(.06f, sb.Range(.2f, .35f), .08f);
+                    sb.Beam(root, bend, .035f, .028f, 4, C(Rust));
+                    sb.Beam(bend, bend + V(sb.Range(-.24f, .24f), .08f, .19f), .028f, .018f, 4, C(RustDark));
                 }
-                Slab(sb, x - step * sb.Range(.23f, .37f), x + step * sb.Range(.21f, .35f),
-                    -.66f, .8f, h - .04f, h + sb.Range(.08f, .17f), sb.Jitter(stone * .88f), .3f);
-                sb.Rock(V(x + sb.Range(-.4f, .4f), h - .04f, 1.05f), .4f, sb.Jitter(stone * .83f), .2f, .45f, 0);
-                sb.Rock(V(x + sb.Range(-.4f, .4f), h - .02f, -1.17f), .28f, sb.Jitter(stone * .72f), .2f, .5f, 0);
-                Vector3 root = V(x + step * .23f, h - .05f, -.35f), bend = root + V(.1f, .27f, .08f);
-                sb.Beam(root, bend, .03f, .026f, 4, C(Rust));
-                sb.Beam(bend, bend + V(.22f, -.08f, .17f), .026f, .018f, 4, C(RustDark));
+            }
+            for (int e = 0; e < 2; e++)
+            {
+                int i = e == 0 ? 0 : bays;
+                Vector3 lo = V(front[i].x, 0, 0), outward = V(e == 0 ? -1 : 1, 0, 0);
+                T(sb, lo, V(lo.x, 0, -1.42f), front[i], stone * .64f, outward);
+                T(sb, lo, front[i], crown[i], stone * .75f, outward);
+                T(sb, lo, crown[i], back[i], stone * .69f, outward);
+                T(sb, lo, back[i], V(lo.x, 0, 1.42f), stone * .61f, outward);
+            }
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float left = -hw;
+                while (left < hw - .12f)
+                {
+                    float right = Mathf.Min(hw, left + sb.Range(1.7f, 3.9f));
+                    Shard(sb, left, right, sb.Range(3.15f, 4.35f), side, 1.66f,
+                        sb.Range(.4f, 1.28f), sb.Range(.22f, .43f), sb.Jitter(stone, .12f));
+                    left = right;
+                }
+                // Angular rubble fans on both approaches, entirely inside the collider.
+                for (int i = 0; i < 19; i++)
+                {
+                    float x = sb.Range(-hw + .85f, hw - .85f), w = sb.Range(.45f, 1.5f);
+                    Shard(sb, x - w * .5f, x + w * .5f, sb.Range(.18f, .64f),
+                        side, 1.79f, sb.Range(.1f, .34f), .22f, sb.Jitter(stone * .79f));
+                }
+                // A few torn plates stand edge-on among the fractures, never flat on top.
+                for (int i = 0; i < 3; i++)
+                {
+                    float x = sb.Range(-hw + 1.3f, hw - 1.3f);
+                    Shard(sb, x - .65f, x + .65f, sb.Range(3.4f, 4.45f),
+                        side, 1.61f, sb.Range(.5f, .95f), .065f, sb.Jitter(RustDark));
+                }
             }
         }
 
@@ -338,26 +403,42 @@ namespace Soul
             const int bays = 11;
             float step = hw * 2 / bays;
             sb.Box(V(0, 3.44f, 0), V(hw * 2, 6.88f, 1.3f), C(RustDark));
+            var seams = new float[bays + 1];
+            seams[0] = -hw; seams[bays] = hw;
+            for (int i = 1; i < bays; i++) seams[i] = -hw + step * (i + sb.Range(-.1f, .1f));
             for (int i = 0; i < bays; i++)
             {
-                float left = -hw + i * step, right = left + step, x = (left + right) * .5f;
+                float left = seams[i], right = seams[i + 1], x = (left + right) * .5f;
+                float width = right - left;
                 for (int side = -1; side <= 1; side += 2)
                 {
                     Color plate = sb.Jitter(i % 3 == 0 ? 0x65594b : i % 3 == 1 ? 0x714a35 : 0x59433a, .075f);
-                    Facing(sb, left, right, .08f, 6.92f, side * .76f, .14f, .13f, plate);
+                    Facing(sb, left, right, .08f, 6.92f, side * .76f, .14f, .13f, plate,
+                        i == 2 || i == 5 || i == 9 ? .095f : 0);
                     Stain(sb, x + sb.Range(-.15f, .15f), sb.Range(4.1f, 5.5f), side * .764f,
-                        step * sb.Range(.32f, .72f), sb.Range(1.1f, 3.2f), C(0x4e514b));
-                    Stain(sb, x + step * .24f, 6.55f, side * .768f, .23f, sb.Range(1.1f, 2.3f), C(RustDark));
-                    Stain(sb, x - step * .25f, 3.1f, side * .768f, .17f, 1.4f, C(Rust));
-                    sb.Box(V(x, 3.35f, side * .79f), V(step - .12f, .18f, .10f), C(0x4b3930));
+                        width * sb.Range(.32f, .72f), sb.Range(1.1f, 3.2f), C(0x4e514b));
+                    Stain(sb, x + width * .24f, 6.55f, side * .768f, .23f, sb.Range(1.1f, 2.3f), C(RustDark));
+                    Stain(sb, x - width * .25f, 3.1f, side * .768f, .17f, 1.4f, C(Rust));
+                    sb.Box(V(x, 3.35f, side * .82f), V(width - .12f, .18f, .10f), C(0x4b3930));
                     for (int k = -1; k <= 1; k += 2) for (int row = 0; row < 2; row++)
-                        Bolt(sb, V(x + k * (step * .5f - .25f), row == 0 ? .47f : 6.52f, side * .79f), V(0, 0, side), .085f);
+                        Bolt(sb, V(x + k * (width * .5f - .25f), row == 0 ? .47f : 6.52f, side * .79f), V(0, 0, side), .085f);
                     if (i < bays - 1)
                         sb.Box(V(right - .075f, 3.5f, side * .82f), V(.15f, 6.86f, .16f), C(Steel));
                 }
                 Slab(sb, left, right, -.9f, .9f, 6.88f, 7, sb.Jitter(0x655344), .09f);
-                sb.Box(V(x, .12f, 0), V(step, .24f, 1.8f), C(RustDark));
+                sb.Box(V(x, .12f, 0), V(width, .24f, 1.8f), C(RustDark));
             }
+        }
+
+        // Asymmetric, filled scum silhouette: no circular rims or concentric outlines.
+        static void Scum(MeshBuilder b, Vector3 p, float width, float depth, Color color)
+        {
+            var rim = new[] { V(-.91f, 0, -.25f), V(-.31f, 0, -.69f), V(.24f, 0, -.43f),
+                V(.96f, 0, -.12f), V(.58f, 0, .37f), V(-.13f, 0, .82f), V(-.65f, 0, .28f) };
+            for (int i = 0; i < rim.Length; i++)
+                rim[i] = p + V(rim[i].x * width * b.Range(.78f, 1), 0, rim[i].z * depth * b.Range(.8f, 1));
+            for (int i = 0; i < rim.Length; i++)
+                T(b, p, rim[i], rim[(i + 1) % rim.Length], b.Jitter(color, .045f), Vector3.up);
         }
 
         /// Level toxic pool with thin mineral crust, small bubbles and drowned industrial drums.
@@ -380,13 +461,18 @@ namespace Soul
                 Slab(sb, x - width * .5f, x + width * .5f, side < 0 ? -6 : inner,
                     side < 0 ? -inner : 6, .015f, sb.Range(.065f, .11f), sb.Jitter(0x555643), .16f);
             }
-            for (int i = 0; i < 18; i++)
+            for (int i = 0; i < 4; i++)
             {
                 Vector3 p = V(sb.Range(-hw + 1, hw - 1), .038f, sb.Range(-4.8f, 4.8f));
-                float r = sb.Range(.23f, .65f);
-                sb.Disc(p, r * .7f, r, 9, sb.Jitter(0x4b5130), .2f, 4.8f);
-                sb.Rock(p, r * .25f, C(0x41492a), .12f, .3f, 0);
-                if (i % 4 == 0) sg.Disc(p + V(0, .004f, 0), r * .75f, r * .83f, 6, glow * .34f, .5f, 2.4f);
+                float r = sb.Range(.31f, .57f);
+                Scum(sb, p, r, r * .7f, sb.Jitter(0x3b4328));
+                for (int j = 0; j < (i % 2 == 0 ? 3 : 2); j++)
+                {
+                    Vector3 bubble = p + V(sb.Range(-.22f, .22f), 0, sb.Range(-.16f, .16f));
+                    sb.Rock(bubble, sb.Range(.065f, .18f), sb.Jitter(0x4b5130), .3f, .48f, 0);
+                }
+                if (i == 0 || i == 3)
+                    Scum(sg, p + V(.13f, .003f, -.07f), .16f, .09f, glow * .27f);
             }
             for (int i = 0; i < 6; i++)
             {
@@ -395,10 +481,11 @@ namespace Soul
                 sb.Cylinder(Vector3.zero, .44f, .41f, .93f, 10, sb.Jitter(i % 2 == 0 ? 0x575b44 : RustDark));
                 sb.Cylinder(V(0, .61f, 0), .445f, .445f, .055f, 10, C(RustDark));
                 sb.Cylinder(V(0, .88f, 0), .435f, .435f, .055f, 10, C(Steel));
-                sb.Disc(V(.14f, .937f, .08f), .055f, .1f, 7, C(Rust));
-                sb.Disc(V(.14f, .938f, .08f), 0, .055f, 7, C(Soot));
+                Slab(sb, .04f, .24f, -.015f, .17f, .931f, .948f, C(Rust), .025f);
+                Q(sb, V(.09f, .949f, .02f), V(.19f, .949f, .03f),
+                    V(.18f, .949f, .12f), V(.08f, .949f, .1f), C(Soot), Vector3.up);
                 sb.Pop();
-                sb.Disc(V(x, .036f, z), .47f, .73f, 9, C(0x171f13), .1f, 5.8f);
+                Scum(sb, V(x, .036f, z), .88f, .71f, C(0x171f13));
             }
         }
 
