@@ -23,15 +23,15 @@ namespace Soul
         bool RopeHolds => rs != RopeState.None && rs != RopeState.Retract;
         public string RopeStateName => rs.ToString();
 
-        void RopeInit(Transform world)
+        void RopeInit()
         {
-            pickups = new Pickups(world) { onCollect = it => { scrap += it.amount; vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
+            pickups = new Pickups(scene.pickups) { onCollect = it => { scrap += it.amount; vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
             var prevKill = enemies.onKill;
             enemies.onKill = e => { prevKill?.Invoke(e); pickups.Burst(e.Center(), e.def.bossName != null ? 10 : e.type == "crawler" ? 2 : 4); };
-            var cg = new GameObject("rope cable"); cg.transform.SetParent(world, false);
-            cable = cg.AddComponent<LineRenderer>(); cable.positionCount = 2; cable.useWorldSpace = true; cable.widthMultiplier = .035f;
+            var cg = scene.ropeCable;
+            cable = cg.GetComponent<LineRenderer>(); cable.positionCount = 2; cable.useWorldSpace = true; cable.widthMultiplier = .035f;
             cable.sharedMaterial = Mats.Unlit(new Color(.16f, .14f, .12f, 1), Blend.Opaque); cable.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; cable.enabled = false;
-            hookT = Spawn(world, "rope hook", ZoneProps.RopeHook(), Mats.Unlit(new Color(1.8f, 1.4f, .8f, 1), Blend.Opaque, true), Vector3.zero, 0, false).transform;
+            hookT = Bind(scene.ropeHook, ZoneProps.RopeHook(), Mats.Unlit(new Color(1.8f, 1.4f, .8f, 1), Blend.Opaque, true), Vector3.zero, 0, false).transform;
             hookT.gameObject.SetActive(false);
         }
 

@@ -16,71 +16,73 @@ namespace Soul
         static Mesh podMesh, podGlow; Transform zoneRoot;
         Material soilMat; Color soilBase; float soilK;   // the original web arena ground (Map/cratered ash soil) greens with Z0
 
-        void ZoneInit(Transform world)
+        void ZoneInit()
         {
             zoneLit = Mats.Lit(Color.white, Color.black, .12f, .12f, true); zoneLit.SetFloat("_Cutaway", 1);
             zoneGlow = Mats.Unlit(Color.white * 2.4f, Blend.Opaque, true);
             fogMat = Mats.Unlit(new Color(.9f, 1.4f, 2.2f, .5f), Blend.Add, true, UnityEngine.Rendering.CullMode.Off, false);
-            fauna = new Fauna(world);
-            var root = zoneRoot = new GameObject("Zone objects").transform; root.SetParent(world, false);
+            fauna = new Fauna(scene.fauna);
+            var root = zoneRoot = scene.zoneObjects;
             // pods
             var podModel = ZoneProps.Pod(out var glow); podMesh = podModel.mesh; podGlow = glow;
-            foreach (var p in ZoneAreas.Pods)
+            for (int i = 0; i < ZoneAreas.Pods.Count; i++)
             {
-                Spawn(root, "pod " + p.name, podMesh, zoneLit, p.pos, p.yaw, true);
-                Spawn(root, "pod glow", podGlow, zoneGlow, p.pos, p.yaw, false);
+                var p = ZoneAreas.Pods[i];
+                Bind(scene.pods[i], podMesh, zoneLit, p.pos, p.yaw, true);
+                Bind(scene.podGlows[i], podGlow, zoneGlow, p.pos, p.yaw, false);
                 var cols = new List<WorldCollision.Col>(); foreach (var pc in podModel.colliders) cols.Add(WorldCollision.ToWorld(pc, p.pos, p.yaw, 1));
                 WorldCollision.AddPersistent(cols, null);
             }
             // boss arenas: ring wall + rope shortcut ledge
-            foreach (var a in ZoneAreas.Arenas)
+            for (int i = 0; i < ZoneAreas.Arenas.Count; i++)
             {
+                var a = ZoneAreas.Arenas[i];
                 var wall = ZoneProps.ArenaWall(a, out _);
-                Spawn(root, "arena " + a.name, wall.mesh, zoneLit, a.center, 0, true);
+                Bind(scene.arenas[i], wall.mesh, zoneLit, a.center, 0, true);
                 var cols = new List<WorldCollision.Col>(); foreach (var pc in wall.colliders) cols.Add(WorldCollision.ToWorld(pc, a.center, 0, 1));
                 var surfs = new List<WorldCollision.Surf>();
                 var g = ZoneGates.Get(a.ropeSite); var sp = new Vector3(a.ropeSite.pos.x, 0, a.ropeSite.pos.y);
-                if (g.fixedPart.mesh) Spawn(root, "arena rope ledge", g.fixedPart.mesh, zoneLit, sp, a.ropeSite.yaw, true);
-                if (g.fixedGlow) Spawn(root, "arena rope glow", g.fixedGlow, zoneGlow, sp, a.ropeSite.yaw, false);
+                if (g.fixedPart.mesh) Bind(scene.arenaRopeLedges[i], g.fixedPart.mesh, zoneLit, sp, a.ropeSite.yaw, true);
+                if (g.fixedGlow) Bind(scene.arenaRopeGlows[i], g.fixedGlow, zoneGlow, sp, a.ropeSite.yaw, false);
                 foreach (var pc in g.fixedPart.colliders) cols.Add(WorldCollision.ToWorld(pc, sp, a.ropeSite.yaw, 1));
                 foreach (var pc in g.solid.colliders) cols.Add(WorldCollision.ToWorld(pc, sp, a.ropeSite.yaw, 1));
                 foreach (var ps in g.fixedPart.surfaces) surfs.Add(WorldCollision.ToWorld(ps, sp, a.ropeSite.yaw, 1));
                 WorldCollision.AddPersistent(cols, surfs);
             }
             // rope swing chasms
-            foreach (var c in ZoneAreas.Chasms)
+            for (int i = 0; i < ZoneAreas.Chasms.Count; i++)
             {
+                var c = ZoneAreas.Chasms[i];
                 var m = ZoneProps.Chasm(c, out var cg);
-                Spawn(root, "chasm", m.mesh, zoneLit, c.center, c.yaw, true); Spawn(root, "chasm glow", cg, zoneGlow, c.center, c.yaw, false);
+                Bind(scene.chasms[i], m.mesh, zoneLit, c.center, c.yaw, true); Bind(scene.chasmGlows[i], cg, zoneGlow, c.center, c.yaw, false);
                 var cols = new List<WorldCollision.Col>(); foreach (var pc in m.colliders) cols.Add(WorldCollision.ToWorld(pc, c.center, c.yaw, 1));
                 WorldCollision.AddPersistent(cols, null);
             }
             // skill shrines (one per zone): resonate with G to take the zone core
             var shrineModel = ShrineProps.Shrine(out var shrineGlow);
-            foreach (var sh in ZoneAreas.Shrines)
+            for (int i = 0; i < ZoneAreas.Shrines.Count; i++)
             {
+                var sh = ZoneAreas.Shrines[i];
                 var p = sh.pos + new Vector3(0, Terrain.Height(sh.pos.x, sh.pos.z), 0);
-                Spawn(root, "shrine " + sh.name, shrineModel.mesh, zoneLit, p, 0, true); Spawn(root, "shrine glow", shrineGlow, zoneGlow, p, 0, false);
+                Bind(scene.shrines[i], shrineModel.mesh, zoneLit, p, 0, true); Bind(scene.shrineGlows[i], shrineGlow, zoneGlow, p, 0, false);
                 var cols = new List<WorldCollision.Col>(); foreach (var pc in shrineModel.colliders) cols.Add(WorldCollision.ToWorld(pc, p, 0, 1));
                 WorldCollision.AddPersistent(cols, null);
             }
             // static progress survives editor play sessions without a domain reload: start clean
             ZoneState.Reset(); Parts.owned = 0; MapFog.Reset(); foreach (var p in ZoneAreas.Pods) p.found = false;
             restPod = ZoneAreas.Pods[0]; restPod.found = true;
-            var map = GameObject.Find("Map");
-            if (map) foreach (var r in map.GetComponentsInChildren<MeshRenderer>(true)) if (r.name == "cratered ash soil") { soilMat = r.material; soilBase = Mats.GetColor(soilMat); }
+            soilMat = scene.crateredAshSoil.material; soilBase = Mats.GetColor(soilMat);
             ZoneState.Changed += OnZoneChanged;
             PixelFace.unlocked = ZoneState.Count;
         }
         void OnDestroy() { ZoneState.Changed -= OnZoneChanged; }
-        static GameObject Spawn(Transform parent, string name, Mesh mesh, Material mat, Vector3 pos, float yaw, bool shadows)
+        static GameObject Bind(GameObject g, Mesh mesh, Material mat, Vector3 pos, float yaw, bool shadows)
         {
-            var g = new GameObject(name); g.transform.SetParent(parent, false);
             g.transform.localPosition = Sim.ToUnity(pos); g.transform.localRotation = Sim.YawToUnity(yaw);
-            g.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var r = g.AddComponent<MeshRenderer>(); r.sharedMaterial = mat;
+            g.GetComponent<MeshFilter>().sharedMesh = mesh;
+            var r = g.GetComponent<MeshRenderer>(); r.sharedMaterial = mat;
             r.shadowCastingMode = shadows ? UnityEngine.Rendering.ShadowCastingMode.On : UnityEngine.Rendering.ShadowCastingMode.Off;
-            return g;
+            g.SetActive(true); return g;
         }
 
         /// MCP tests: the editor barely ticks frames while unfocused, so drive the zone logic by hand
@@ -179,7 +181,7 @@ namespace Soul
             boss = enemies.SpawnAt(a.boss, a.center);
             // fog gate across the entrance (soul fog: blocks until the fight ends)
             float r = a.radius + ZoneAreas.WALL_T * .5f; var gp = a.center + Sim.Forward(a.entranceYaw) * r;
-            fogGo = Spawn(zoneRoot, "fog gate", ZoneProps.FogGate(7.5f, 6), fogMat, gp, a.entranceYaw, false);
+            fogGo = Bind(scene.fogGate, ZoneProps.FogGate(7.5f, 6), fogMat, gp, a.entranceYaw, false);
             fogCols = new List<WorldCollision.Col> { WorldCollision.ToWorld(PropCollider.Rect(0, 0, 7.6f, .9f), gp, a.entranceYaw, 1) };
             WorldCollision.AddPersistent(fogCols, null);
             cam.Shake(.06f);
@@ -188,7 +190,7 @@ namespace Soul
         {
             var a = fightArena; fightArena = null; bossIntro = -1;
             if (fogCols != null) { WorldCollision.RemovePersistent(fogCols); fogCols = null; }
-            if (fogGo) { Destroy(fogGo.GetComponent<MeshFilter>().sharedMesh); Destroy(fogGo); }
+            if (fogGo) { Destroy(fogGo.GetComponent<MeshFilter>().sharedMesh); fogGo.GetComponent<MeshFilter>().sharedMesh = null; fogGo.SetActive(false); }
             if (!won) { if (boss != null && boss.alive) boss.Despawn(); boss = null; return; }
             boss = null;
             if (a.reward != Parts.None && a.reward != Parts.LabKeys) Parts.Give(a.reward);

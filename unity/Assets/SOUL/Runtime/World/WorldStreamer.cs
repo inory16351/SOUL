@@ -20,9 +20,9 @@ namespace Soul
         public int ChunkCount => loaded.Count;
         public int PropCount;
 
-        public WorldStreamer(Transform parent)
+        public WorldStreamer(Transform sceneRoot)
         {
-            root = new GameObject("Open World").transform; root.SetParent(parent, false);
+            root = sceneRoot;
             propMat = Mats.Lit(Color.white, Color.black, .12f, .12f, true); propMat.SetFloat("_Cutaway", 1);
             groundMat = Mats.Lit(Color.white, Color.black, 0, .05f, true);
             ridgeMat = Mats.Lit(Color.white, Color.black, 0, .06f, true); ridgeMat.SetFloat("_Cutaway", 1);

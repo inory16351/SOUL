@@ -15,7 +15,7 @@ namespace Soul
         float time, w; public float weight;
         uint seed = 9311; float Rand() { seed = seed * 1664525u + 1013904223u; return seed / 4294967296f; }
 
-        public Fauna(Transform parent)
+        public Fauna(GameObject go)
         {
             var cols = new Color[N * 6]; var tris = new int[N * 6];
             Color[] wings = { new Color(.95f, .86f, .45f), new Color(.95f, .95f, .9f), new Color(.85f, .55f, .62f), new Color(.6f, .72f, .95f) };
@@ -29,9 +29,8 @@ namespace Soul
             }
             mesh = new Mesh { name = "fauna" }; mesh.MarkDynamic();
             mesh.vertices = verts; mesh.colors = cols; mesh.triangles = tris; mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 4000);
-            var go = new GameObject("fauna"); go.transform.SetParent(parent, false);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            renderer = go.AddComponent<MeshRenderer>(); renderer.sharedMaterial = Mats.Unlit(new Color(1.3f, 1.3f, 1.3f, 1), Blend.Opaque, true, CullMode.Off);
+            go.GetComponent<MeshFilter>().sharedMesh = mesh;
+            renderer = go.GetComponent<MeshRenderer>(); renderer.sharedMaterial = Mats.Unlit(new Color(1.3f, 1.3f, 1.3f, 1), Blend.Opaque, true, CullMode.Off);
             renderer.shadowCastingMode = ShadowCastingMode.Off; renderer.enabled = false;
         }
 

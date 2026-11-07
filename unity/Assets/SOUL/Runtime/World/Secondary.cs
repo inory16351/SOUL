@@ -46,9 +46,11 @@ namespace Soul
             }
             mesh = new Mesh { name = name }; mesh.MarkDynamic();
             mesh.vertices = verts; mesh.colors = colors; mesh.SetTriangles(tris, 0);
-            go = new GameObject(name); go.transform.SetParent(parent, false);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var r = go.AddComponent<MeshRenderer>();
+            var child = parent.Find(name);
+            if (!child) throw new System.InvalidOperationException("Missing scene cloth object: " + name);
+            go = child.gameObject;
+            go.GetComponent<MeshFilter>().sharedMesh = mesh;
+            var r = go.GetComponent<MeshRenderer>();
             r.sharedMaterial = Mats.Lit(Color.white, Color.black, 0, .05f, true, CullMode.Off);
             r.shadowCastingMode = ShadowCastingMode.On; r.receiveShadows = true;
             Reset();

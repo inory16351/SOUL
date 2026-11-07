@@ -49,7 +49,7 @@ namespace Soul
         // rune emission
         readonly Material runeMat; readonly Color runeEmissive;
 
-        public Vfx(Transform fxRoot, CharacterRig ch)
+        public Vfx(Transform fxRoot, CharacterRig ch, GameObject trailObject)
         {
             root = fxRoot; this.ch = ch;
             glow = Mats.Radial(64, (0, new Color(235 / 255f, 248 / 255f, 1, 1)), (.25f, new Color(90 / 255f, 180 / 255f, 1, .8f)), (1, new Color(30 / 255f, 110 / 255f, 1, 0)));
@@ -71,9 +71,9 @@ namespace Soul
             trailMesh = new Mesh { name = "blade-trail" }; trailMesh.MarkDynamic();
             trailMesh.vertices = tv; trailMesh.colors = tc; trailMesh.SetIndices(tIndex, 0, 0, MeshTopology.Triangles, 0, false);
             trailMesh.bounds = new Bounds(Vector3.zero, Vector3.one * 2000);
-            var tgo = new GameObject("blade-trail"); tgo.transform.SetParent(root, false);
-            tgo.AddComponent<MeshFilter>().sharedMesh = trailMesh;
-            var tr = tgo.AddComponent<MeshRenderer>(); tr.sharedMaterial = Mats.Unlit(Color.white, Blend.Add, true, CullMode.Off); tr.shadowCastingMode = ShadowCastingMode.Off; tr.receiveShadows = false;
+            var tgo = trailObject;
+            tgo.GetComponent<MeshFilter>().sharedMesh = trailMesh;
+            var tr = tgo.GetComponent<MeshRenderer>(); tr.sharedMaterial = Mats.Unlit(Color.white, Blend.Add, true, CullMode.Off); tr.shadowCastingMode = ShadowCastingMode.Off; tr.receiveShadows = false;
 
             var rune = ch?.model ? ch.model.Part("rune") : null;
             var rr = rune ? rune.GetComponent<MeshRenderer>() : null;

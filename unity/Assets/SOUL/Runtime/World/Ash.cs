@@ -17,7 +17,7 @@ namespace Soul
         uint seed = 4207;
         float Rand() { seed = seed * 1664525u + 1013904223u; return seed / 4294967296f; }
 
-        public Ash(Transform parent)
+        public Ash(GameObject go)
         {
             var colors = new Color[COUNT * 4]; var tris = new int[COUNT * 6];
             var baseC = ((Color)new Color32(0xb5, 0xaa, 0xa0, 255)).linear;
@@ -32,9 +32,8 @@ namespace Soul
             mesh = new Mesh { name = "drifting-ash" }; mesh.MarkDynamic();
             mesh.vertices = verts; mesh.colors = colors; mesh.triangles = tris;
             mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 2000);
-            var go = new GameObject("drifting ash"); go.transform.SetParent(parent, false);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var r = go.AddComponent<MeshRenderer>();
+            go.GetComponent<MeshFilter>().sharedMesh = mesh;
+            var r = go.GetComponent<MeshRenderer>();
             r.sharedMaterial = mat = Mats.Unlit(new Color(1, 1, 1, .52f), Blend.Alpha, true, CullMode.Off, false);
             r.shadowCastingMode = ShadowCastingMode.Off; r.receiveShadows = false;
         }

@@ -401,7 +401,7 @@ namespace Soul
         readonly List<WispFx> wisps = new List<WispFx>(), pool = new List<WispFx>();
         readonly Texture2D glow; readonly Mesh quad; readonly Transform wispRoot;
 
-        public EnemyManager(Transform parent, Vfx vfx, float bounds = 18)
+        public EnemyManager(Transform parent, Vfx vfx, float bounds = 18, Transform sceneWispRoot = null)
         {
             this.parent = parent; this.vfx = vfx; this.bounds = bounds;
             glow = Mats.Radial(64, (0, new Color(1, 220 / 255f, 180 / 255f, 1)), (.3f, new Color(1, 90 / 255f, 40 / 255f, .7f)), (1, new Color(160 / 255f, 20 / 255f, 10 / 255f, 0)));
@@ -409,7 +409,7 @@ namespace Soul
             quad.vertices = new[] { new Vector3(-.5f, -.5f, 0), new Vector3(.5f, -.5f, 0), new Vector3(.5f, .5f, 0), new Vector3(-.5f, .5f, 0) };
             quad.uv = new[] { new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1) };
             quad.triangles = new[] { 0, 2, 1, 0, 3, 2 }; quad.RecalculateBounds();
-            wispRoot = new GameObject("soul-wisps").transform; wispRoot.SetParent(parent, false);
+            wispRoot = sceneWispRoot;
         }
         // summon at an exact spot (clamped to the arena)
         public Enemy SpawnAt(string type, Vector3 pos)

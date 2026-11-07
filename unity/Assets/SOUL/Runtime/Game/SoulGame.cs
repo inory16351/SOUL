@@ -19,6 +19,7 @@ namespace Soul
         const float BLADE_REACH = 1.1f, TIP_EXTEND = .5f, BREAK_REACH = .8f, WAVE_R = 2.6f;
         static readonly Dictionary<KeyCode, float> COOLDOWN = new Dictionary<KeyCode, float> { { KeyCode.Q, 4 }, { KeyCode.W, 3 }, { KeyCode.E, 5 }, { KeyCode.R, 9 }, { KeyCode.Space, 1.1f }, { KeyCode.F, .8f } };
 
+        public SoulScene scene;
         public CharacterRig ch; public SoulAnimator anim; public Vfx vfx; public EnemyManager enemies; public Breakables breakables;
         public WorldStreamer open; public RegionAtmosphere atmo;
         public LaserBlade laser; public PixelFace face; public Secondary secondary; public Ash ash; public FollowCam cam;
@@ -41,13 +42,14 @@ namespace Soul
         {
             Application.targetFrameRate = 120;
             MoveDB.Load();
-            var world = new GameObject("World (runtime)").transform;
-            var fxRoot = new GameObject("FX").transform; fxRoot.SetParent(world);
+            if (!scene) scene = GetComponent<SoulScene>();
+            if (!scene || !scene.Complete) { Debug.LogError("[SOUL] Scene hierarchy is not configured. Run SOUL/Build Scene Hierarchy.", this); enabled = false; return; }
+            var world = scene.world;
             var preview = GameObject.Find("Character (preview)"); if (preview) preview.SetActive(false);
-            ch = new CharacterRig(world); ch.root.position = new Vector3(0, 0, -.25f);
+            ch = new CharacterRig(scene.actors); ch.root.position = new Vector3(0, 0, -.25f);
             player.pos = ch.root.position;
             cam = new FollowCam(Camera.main);
-            vfx = new Vfx(fxRoot, ch);
+            vfx = new Vfx(scene.transientFx, ch, scene.bladeTrail);
             anim = new SoulAnimator(ch)
             {
                 willPlay = n => { if (aimYaw.HasValue && n.StartsWith("light")) { anim.pendingYaw = aimYaw; aimYaw = null; } },
@@ -63,8 +65,8 @@ namespace Soul
             };
             laser = new LaserBlade(ch); face = new PixelFace(ch);
             anim.groundAt = (x, z) => WorldCollision.Floor(x, z, ch.root.position.y, .6f);
-            secondary = new Secondary(ch, world);
-            enemies = new EnemyManager(world, vfx, Regions.ENEMY_BOUNDS)
+            secondary = new Secondary(ch, scene.cloth);
+            enemies = new EnemyManager(scene.actors, vfx, Regions.ENEMY_BOUNDS, scene.soulWisps)
             {
                 onPlayerHit = OnPlayerHit,
                 onImpact = (e, a, p) =>
@@ -76,12 +78,13 @@ namespace Soul
                 },
                 onKill = e => kills++,
             };
-            breakables = new Breakables(world, vfx, 12, BOUNDS - 1);
-            ash = new Ash(world);
-            open = new WorldStreamer(world); open.Update(ch.root.position, true);
+            breakables = new Breakables(scene.breakables, vfx, 12, BOUNDS - 1);
+            ash = new Ash(scene.driftingAsh);
+            open = new WorldStreamer(scene.openWorld); open.Update(ch.root.position, true);
             var sunGo = GameObject.Find("Sun"); atmo = new RegionAtmosphere(sunGo ? sunGo.GetComponent<Light>() : null, cam.camera);
-            var map = GameObject.Find("Map"); if (map) foreach (var t in map.GetComponentsInChildren<Transform>(true)) { if (t.name == "dust sky") sky = t; if (t.name == "ruins skyline") t.gameObject.SetActive(false); }
-            ZoneInit(world); RopeInit(world);
+            sky = scene.dustSky;
+            scene.ruinsSkyline.SetActive(false);
+            ZoneInit(); RopeInit();
             ch.UpdateWorld(); ch.Sync();
             cam.Update(1, ch.root.position);
         }
