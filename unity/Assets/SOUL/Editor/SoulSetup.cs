@@ -59,7 +59,7 @@ namespace Soul.EditorTools
             // keep the SOUL shaders in player builds (materials are created at runtime)
             var gs = new SerializedObject(AssetDatabase.LoadAssetAtPath<Object>("ProjectSettings/GraphicsSettings.asset"));
             var list = gs.FindProperty("m_AlwaysIncludedShaders");
-            foreach (var name in new[] { "SOUL/Lit", "SOUL/Unlit" })
+            foreach (var name in new[] { "SOUL/Lit", "SOUL/Unlit", "SOUL/Water" })
             {
                 var sh = Shader.Find(name); if (!sh) continue;
                 bool has = false; for (int i = 0; i < list.arraySize; i++) if (list.GetArrayElementAtIndex(i).objectReferenceValue == sh) has = true;

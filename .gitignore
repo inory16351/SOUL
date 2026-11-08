@@ -2,3 +2,10 @@
 node_modules/
 *.log
 web-proto/.export/
+
+# scratch artifacts from map / PPT tooling
+unity/Captures/*.npy
+unity/Captures/*.raw
+unity/Captures/map_src/
+기획서/art/_crop/
+unity/tools/.probe.cs

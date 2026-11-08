@@ -26,6 +26,12 @@ namespace Soul
             float t = (planeY - ray.origin.y) / ray.direction.y; if (t < 0) return null;
             return Sim.FromUnity(ray.origin + ray.direction * t);
         }
+        /// 전망 지점 (vista): 0..1 blend toward a low, pulled-back view looking along `vistaYaw` at `vistaLook`
+        /// (sim). SoulGame.Vista drives these; at 0 the camera is the normal top-down follow.
+        public float vista, vistaYaw; public Vector3 vistaLook;
+        /// boss fight framing: set fightTarget 1 (0 to release) and fightFocus = boss position (sim) every frame;
+        /// the camera eases out by fightZoom and centres between player and boss
+        public float fightTarget, fightZoom = .75f; public Vector3 fightFocus; float fight;
         public void Update(float dt, Vector3 simPos)
         {
             clock += dt; float aspect = camera.aspect;
@@ -33,9 +39,29 @@ namespace Soul
             if (aspect < 1.2f) offset *= 1.2f;
             yaw += Sim.WrapPi(targetYaw - yaw) * (1 - Mathf.Exp(-dt * 6));
             if (!side) offset = Sim.ApplyAxisAngle(offset, Vector3.up, yaw);
-            var tgt = simPos + new Vector3(0, .8f, 0); target = Vector3.LerpUnclamped(target, tgt, 1 - Mathf.Exp(-dt * 8));
-            if (snapNext) { target = tgt; position = target + offset; snapNext = false; }
-            else position = Vector3.LerpUnclamped(position, target + offset, 1 - Mathf.Exp(-dt * 7));
+            var tgt = simPos + new Vector3(0, .8f, 0);
+            // boss framing: pull out and centre between player and boss so the whole beast stays in frame
+            fight = Mathf.MoveTowards(fight, fightTarget, dt * .8f);
+            if (fight > 0 && !side)
+            {
+                float k = fight * fight * (3 - 2 * fight);
+                offset *= 1 + fightZoom * k;
+                tgt = Vector3.Lerp(tgt, (tgt + fightFocus) * .5f, .55f * k);
+            }
+            var posGoal = tgt + offset;
+            if (vista > 0 && !side)
+            {
+                // 6.5 m up, 8 m behind the player, looking at a point far ahead: about 7 deg below the horizon,
+                // so the horizon (and the far landmark silhouettes) sits in the upper third of the frame
+                float k = vista * vista * (3 - 2 * vista);
+                posGoal = Vector3.Lerp(posGoal, simPos + Sim.ApplyAxisAngle(new Vector3(0, 6.5f, -8f), Vector3.up, vistaYaw), k);
+                tgt = Vector3.Lerp(tgt, vistaLook, k);
+                camera.farClipPlane = Mathf.Lerp(140, 1100, k);
+            }
+            else camera.farClipPlane = 140;
+            target = Vector3.LerpUnclamped(target, tgt, 1 - Mathf.Exp(-dt * 8));
+            if (snapNext) { target = tgt; position = posGoal; snapNext = false; }
+            else position = Vector3.LerpUnclamped(position, posGoal, 1 - Mathf.Exp(-dt * 7));
             shakeAmount *= Mathf.Exp(-dt * 17);
             var p = position; p.x += Mathf.Sin(clock * 103) * shakeAmount; p.y += Mathf.Sin(clock * 137) * shakeAmount * .6f;
             camera.transform.position = Sim.ToUnity(p);

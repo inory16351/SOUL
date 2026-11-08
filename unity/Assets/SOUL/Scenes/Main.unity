@@ -4950,6 +4950,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bb574b7980e0c6a4d8548d781db9112c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Soul.SoulGame
+  bossFlow: 
+  gimmick: none
+  pillarOrder: 
+  pillarNext: 0
+  pillarFails: 0
+  pillarWins: 0
+  flowT: 0
+  gimmickT: 0
+  cycleT: 0
+  lastHeal: 0
   scrap: 0
   scene: {fileID: 2106957757}
   timeScale: 1

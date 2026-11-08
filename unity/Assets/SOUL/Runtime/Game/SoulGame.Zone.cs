@@ -99,18 +99,21 @@ namespace Soul
             if (an != areaName) { if (an != areaCandidate) { areaCandidate = an; areaHold = 0; } areaHold += dt; if (areaHold > .8f) { areaName = an; if (an != null) areaT = 0; } }
             else areaCandidate = an;
             if (areaT >= 0) { areaT += dt; if (areaT > 3.2f) areaT = -1; }
-            // boss arena
-            if (fightArena == null && player.alive)
+            // boss arena (the boss lies switched off until you walk in)
+            if (fightArena == null && !Purifying) DormantBoss(p);
+            if (fightArena == null && player.alive && !Purifying)
             {
                 var a = ZoneAreas.ArenaAt(p, 5);
                 if (a != null && !ZoneState.Purified(a.zone)) StartFight(a);
             }
             else if (fightArena != null && boss != null && !boss.alive) EndFight(true);
             if (bossIntro >= 0) { bossIntro += dt; if (bossIntro > 3.5f) bossIntro = -1; }
+            PillarsUpdate(dt); PurifyUpdate(dt);
             // purified life
             bool healed = ZoneState.Purified(zone);
-            fauna.weight = healed ? 1 : 0; fauna.Update(dt, p);
-            ash.bloom = healed ? 1 : 0;
+            bool bloomHere = healed && HealReached(p);   // during the purify wave: only once the ring has passed you
+            fauna.weight = bloomHere ? 1 : 0; fauna.Update(dt, p);
+            ash.bloom = bloomHere ? 1 : 0;
             atmo.ease = realTime < revealUntil ? .22f : .9f;
             PixelFace.unlocked = ZoneState.Count;
             if (soilMat)
@@ -177,8 +180,9 @@ namespace Soul
         // ---------- boss fight ----------
         void StartFight(BossArena a)
         {
-            fightArena = a; bossIntro = 0;
-            boss = enemies.SpawnAt(a.boss, a.center);
+            fightArena = a; bossIntro = -1;   // name card + HP bar wait for the wake-up (BossPillars intro)
+            if (boss == null || !boss.alive) boss = enemies.SpawnDormant(a.boss, a.center, a.entranceYaw);
+            PillarsStart(a);
             // fog gate across the entrance (soul fog: blocks until the fight ends)
             float r = a.radius + ZoneAreas.WALL_T * .5f; var gp = a.center + Sim.Forward(a.entranceYaw) * r;
             fogGo = Bind(scene.fogGate, ZoneProps.FogGate(7.5f, 6), fogMat, gp, a.entranceYaw, false);
@@ -188,16 +192,12 @@ namespace Soul
         }
         void EndFight(bool won)
         {
-            var a = fightArena; fightArena = null; bossIntro = -1;
+            var a = fightArena; fightArena = null; bossIntro = -1; PillarsClear();
             if (fogCols != null) { WorldCollision.RemovePersistent(fogCols); fogCols = null; }
             if (fogGo) { Destroy(fogGo.GetComponent<MeshFilter>().sharedMesh); fogGo.GetComponent<MeshFilter>().sharedMesh = null; fogGo.SetActive(false); }
             if (!won) { if (boss != null && boss.alive) boss.Despawn(); boss = null; return; }
-            boss = null;
-            if (a.reward != Parts.None && a.reward != Parts.LabKeys) Parts.Give(a.reward);
-            ZoneState.Set(a.zone, true);
-            int n = ZoneState.Count; string face = n >= 1 && n <= PixelFace.ORDER.Length ? PixelFace.ORDER[n - 1] : null;
-            Cue($"{a.name} 정화 · {Parts.Names[a.reward]} 획득" + (face != null ? $" · 새 표정 ({n}/{PixelFace.ORDER.Length})" : ""), 4);
-            if (face != null) After(1.2f, () => this.face.Preview(face, 1.6f));
+            var dead = boss; boss = null;
+            StartPurify(a, dead);   // BossPurify: collapse, hatred released, purification wave, rope arm from the wreck, new face
         }
 
         void OnZoneChanged(int zone)
@@ -272,7 +272,14 @@ namespace Soul
             var shr = NearShrine(5);
             if (shr != null && fightArena == null) { GUI.color = new Color(.75f, .95f, 1); GUI.Label(new Rect(0, H * .62f, W, 24), ZoneState.HasCore(shr.zone) ? $"{shr.name} · 공명함" : $"G  공명 · {shr.name}", new GUIStyle(big) { fontSize = 17 }); }
             // boss bar
-            if (boss != null && fightArena != null)
+            PillarsGUI(W, H);
+            if (purifyT > 1.2f && purifyT < 6.2f && purifyArena != null)
+            {   // the only text of the scene: the zone name, reborn
+                float pa = Mathf.Clamp01((purifyT - 1.2f) / .8f) * (1 - Sim.SmoothStep(purifyT, 5, 6.2f));
+                GUI.color = new Color(1, .96f, .82f, pa); GUI.Label(new Rect(0, H * .28f, W, 50), ZoneGraph.Zones[purifyArena.zone].name, new GUIStyle(big) { fontSize = 40 });
+                GUI.color = new Color(.85f, 1, .85f, pa * .9f); GUI.Label(new Rect(0, H * .28f + 46, W, 26), "정화", new GUIStyle(big) { fontSize = 20 });
+            }
+            if (boss != null && fightArena != null && BossAwake)
             {
                 float bw = Mathf.Min(W * .6f, 760), x = (W - bw) / 2, y = H - 150;
                 float intro = bossIntro >= 0 ? Mathf.Clamp01(bossIntro / .6f) : 1;

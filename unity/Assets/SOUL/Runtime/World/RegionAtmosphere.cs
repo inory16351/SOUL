@@ -10,6 +10,12 @@ namespace Soul
         Color fog, sky, eq, ground, sunCol; float density, sunI;
         /// ease rate toward the target look (1/s); SoulGame slows it for the purification reveal
         public float ease = .9f;
+        /// global fog thinning (user 2026-11-07: "화면이 뿌옇다"); region tables keep their relative look
+        public static float fogScale = .62f;
+        /// metres around the player where fog fades out (shaders: _SoulFogClear)
+        public static float clearRadius = 22;
+        /// 0..1 vista view (전망 지점): the clear zone around the player widens
+        public float vista;
         public int current = -1; public RegionDef Current => current >= 0 ? Regions.All[current] : null;
         float candidateTime; int candidate = -1;
         // banner
@@ -35,12 +41,13 @@ namespace Soul
             fog = Color.Lerp(fog, t.fog, k); sky = Color.Lerp(sky, t.ambSky, k); eq = Color.Lerp(eq, t.ambEquator, k); ground = Color.Lerp(ground, t.ambGround, k);
             sunCol = Color.Lerp(sunCol, t.sun, k); density = Mathf.Lerp(density, t.fogDensity, k); sunI = Mathf.Lerp(sunI, t.sunIntensity, k);
             Apply();
+            Shader.SetGlobalVector("_SoulFogClear", (Vector4)Sim.ToUnity(pos) + new Vector4(0, 0, 0, clearRadius * (1 + vista * 3)));
             if (bannerT >= 0) { bannerT += dt; if (bannerT > BANNER_LEN) bannerT = -1; }
         }
         void Apply()
         {
             RenderSettings.fog = true; RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = fog; RenderSettings.fogDensity = density;
+            RenderSettings.fogColor = fog; RenderSettings.fogDensity = density * fogScale;   // a vista keeps the fog: it hides where the streamed ground ends (far landmarks are drawn as fog-free silhouettes)
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = sky * .85f; RenderSettings.ambientEquatorColor = eq * .85f; RenderSettings.ambientGroundColor = ground * .85f;
             if (sun) { sun.color = sunCol; sun.intensity = sunI; }

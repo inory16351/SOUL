@@ -36,6 +36,9 @@ namespace Soul
         public float entranceYaw;            // direction from the centre to the main (free) entrance
         public ZoneWorld.Site ropeSite;      // rope-gated shortcut over the wall (one way in)
         public int reward;                   // part given on the kill (ZoneGraph zone reward)
+        /// energy pillar spots (offsets from the centre, x / z) for phase 1 and phase 2 (BossPillars).
+        /// Neighbours ≥ 9 m apart so a 4 m area skill never reaches two at once.
+        public Vector2[] pillars1, pillars2;
     }
 
     /// a gap only the rope swing crosses (hook hanging over the middle)
@@ -83,11 +86,18 @@ namespace Soul
                 index = 100, pos = new Vector2(arena.center.x, arena.center.z - arena.radius), n = n, tan = new Vector2(n.y, -n.x), yaw = Mathf.Atan2(n.x, n.y),
                 link = new ZoneGraph.Link { a = 0, b = 0, kind = ZoneGraph.Kind.Part, part = Parts.Rope, oneWay = true, note = "보스 지대 지름길" },
             };
+            // pillar rings around the boss's bed: phase 1 three at r 6 (10.4 m apart), phase 2 four at r 6.5 (9.2 m)
+            arena.pillars1 = Ring(6, 3, 0); arena.pillars2 = Ring(6.5f, 4, Mathf.PI / 4);
             Arenas.Add(arena);
             // rope swing demo in the ruined streets: a collapsed street-level gap with a crane hook over it
             Chasms.Add(new Chasm { zone = 0, center = new Vector3(-210, 0, 60), yaw = 0, halfLength = 16, halfWidth = 5 });
         }
 
+        static Vector2[] Ring(float r, int n, float a0)
+        {
+            var o = new Vector2[n]; for (int i = 0; i < n; i++) { float a = a0 + i * Mathf.PI * 2 / n; o[i] = new Vector2(Mathf.Sin(a) * r, Mathf.Cos(a) * r); }
+            return o;
+        }
         public static Area AreaAt(Vector3 p)
         {
             Area best = null; float bd = float.PositiveInfinity; int zone = ZoneWorld.At(p.x, p.z);

@@ -30,6 +30,28 @@ Shader "SOUL/Lit"
         // top-down cutaway: geometry above the player's head near the player is dithered out
         float4 _SoulCutCenter;   // xyz = player feet (world), w = radius
         float4 _SoulCutParams;   // x = height above feet where cutting starts, y = fade width
+        // fog clears around the player (RegionAtmosphere sets it): the play area stays crisp, distance stays hazy
+        float4 _SoulFogClear;    // xyz = player (world), w = clear radius (0 = off)
+        half3 SoulMixFog(half3 c, float fogFactor, float3 positionWS)
+        {
+            half k = ComputeFogIntensity(fogFactor);   // 1 = no fog
+            if (_SoulFogClear.w > 0) k = lerp(1, k, smoothstep(_SoulFogClear.w * .45, _SoulFogClear.w, length(positionWS.xz - _SoulFogClear.xz)));
+            return lerp(unity_FogColor.rgb, c, k);
+        }
+        // purification wave (boss kill, SoulGame BossPurify): the zone is already rebuilt healed; outside the expanding
+        // ring it still reads as ashen grey, and the ring front glows
+        float4 _SoulHeal;        // xz = wave centre (world), y = radius, w = 1 while the wave runs
+        half3 SoulHealWave(half3 c, float3 positionWS)
+        {
+            if (_SoulHeal.w <= 0) return c;
+            float d = length(positionWS.xz - _SoulHeal.xz);
+            half outside = smoothstep(_SoulHeal.y - 5, _SoulHeal.y + 3, d);
+            half g = dot(c, half3(.3, .55, .15));
+            c = lerp(c, g * half3(.86, .83, .8) * .82, outside);
+            half band = saturate(1 - abs(d - _SoulHeal.y) / 14);
+            half inner = saturate(1 - (_SoulHeal.y - d) / 60) * (1 - outside);   // fresh green just behind the front
+            return c * (1 + inner * half3(-.05, .25, -.05)) + half3(.6, 1.1, .7) * band * band * 2.4;
+        }
         void SoulCutaway(float3 positionWS, float4 positionCS)
         {
             if (_Cutaway < .5 || _SoulCutCenter.w <= 0) return;
@@ -87,7 +109,8 @@ Shader "SOUL/Lit"
                 s.albedo = _BaseColor.rgb * i.color.rgb; s.metallic = _Metallic; s.smoothness = _Smoothness;
                 s.occlusion = 1; s.alpha = 1; s.emission = _EmissionColor.rgb;
                 half4 c = UniversalFragmentPBR(d, s);
-                c.rgb = MixFog(c.rgb, i.fogFactor);
+                c.rgb = SoulHealWave(c.rgb, i.positionWS);
+                c.rgb = SoulMixFog(c.rgb, i.fogFactor, i.positionWS);
                 return c;
             }
             ENDHLSL

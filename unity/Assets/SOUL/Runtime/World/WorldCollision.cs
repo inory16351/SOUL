@@ -187,16 +187,32 @@ namespace Soul
             }
             return false;
         }
+        /// steepest walkable terrain grade (rise / run ≈ 45°); steeper terrain is a wall going up
+        public const float SLOPE = 1f, SLOPE_PROBE = .5f;
+        /// steep bare terrain ahead of (x, z) in direction (dx, dz) (unit) that rises above the feet: cliffs and
+        /// over-steep slopes block walking up (players and enemies, jumping too); walking down is a drop
+        public static bool TerrainWall(float x, float z, float dx, float dz, float footY)
+        {
+            if (!Terrain.enabled || (dx == 0 && dz == 0)) return false;
+            float ax = x + dx * SLOPE_PROBE, az = z + dz * SLOPE_PROBE, ha = Terrain.Height(ax, az);
+            if (ha <= footY + .05f) return false;
+            // the face's full gradient (not the rise along the move): sliding or zig-zagging can't climb it
+            const float E = .35f;
+            float gx = (Terrain.Height(ax + E, az) - Terrain.Height(ax - E, az)) / (2 * E), gz = (Terrain.Height(ax, az + E) - Terrain.Height(ax, az - E)) / (2 * E);
+            float g = Mathf.Sqrt(gx * gx + gz * gz);
+            return g > SLOPE && (dx * gx + dz * gz) > .2f * g && ha - Terrain.Height(x, z) > .02f;
+        }
         public static Vector3 Move(Vector3 from, Vector3 to, float radius, float climb)
         {
             var p = to; p.y = from.y; Resolve(ref p, radius);
             var d = new Vector2(p.x - from.x, p.z - from.z); float len = d.magnitude;
-            Vector2 lead = len > 1e-5f ? d / len * radius * .7f : Vector2.zero;   // probe slightly ahead of the centre
-            bool Blocked(Vector3 q) => Ledge(q.x, q.z, from.y, climb) || (len > 1e-5f && Ledge(q.x + lead.x, q.z + lead.y, from.y, climb));
+            Vector2 dir = len > 1e-5f ? d / len : Vector2.zero, lead = dir * radius * .7f;   // probe slightly ahead of the centre
+            bool Blocked(Vector3 q) => Ledge(q.x, q.z, from.y, climb) || (len > 1e-5f && (Ledge(q.x + lead.x, q.z + lead.y, from.y, climb) || TerrainWall(q.x, q.z, dir.x, dir.y, from.y)));
             if (!Blocked(p)) return p;
-            // blocked by a ledge: try sliding along each axis
-            var a = new Vector3(p.x, from.y, from.z); if (!Ledge(a.x, a.z, from.y, climb)) { Resolve(ref a, radius); return a; }
-            var b = new Vector3(from.x, from.y, p.z); if (!Ledge(b.x, b.z, from.y, climb)) { Resolve(ref b, radius); return b; }
+            // blocked by a ledge / cliff: try sliding along each axis
+            float sx = Mathf.Sign(p.x - from.x), sz = Mathf.Sign(p.z - from.z);
+            var a = new Vector3(p.x, from.y, from.z); if (!Ledge(a.x, a.z, from.y, climb) && !TerrainWall(a.x, a.z, sx, 0, from.y)) { Resolve(ref a, radius); return a; }
+            var b = new Vector3(from.x, from.y, p.z); if (!Ledge(b.x, b.z, from.y, climb) && !TerrainWall(b.x, b.z, 0, sz, from.y)) { Resolve(ref b, radius); return b; }
             return new Vector3(from.x, from.y, from.z);
         }
     }

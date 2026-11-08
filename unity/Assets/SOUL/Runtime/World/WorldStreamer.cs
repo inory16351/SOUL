@@ -10,7 +10,7 @@ namespace Soul
     public class WorldStreamer
     {
         public const float CHUNK = 32, CELL = 1;   // 1 m ground grid: room for the zone ground patterns (GroundLook)
-        public int loadRadius = 3, unloadRadius = 4, buildPerFrame = 2;
+        public int loadRadius = 3, unloadRadius = 4;
         readonly Transform root;
         readonly Material propMat, groundMat, ridgeMat;
         readonly Dictionary<int, Material> glowMats = new Dictionary<int, Material>();
@@ -37,9 +37,29 @@ namespace Soul
         }
         static int Hash(int a, int b, int c) { unchecked { int h = (int)2166136261; h = (h ^ a) * 16777619; h = (h ^ b) * 16777619; h = (h ^ c) * 16777619; return h & 0x7fffffff; } }
 
+        // chunk builds are stepped jobs (Build yields between stages) run under a per-frame time budget, nearest
+        // first; chunks next to the player's own always finish at once (collision must be there before you are)
+        public float budgetMs = 4;
+        readonly List<(Vector2Int k, IEnumerator<bool> job)> jobs = new List<(Vector2Int, IEnumerator<bool>)>();
+        readonly System.Diagnostics.Stopwatch frameWatch = new System.Diagnostics.Stopwatch();
+        public int PendingBuilds => jobs.Count;
+        double stepMean = 1;
+        bool warmed; public static double PrewarmMs;
+        /// build every structure / landmark model once, on the first full load: a first build costs 30-120 ms,
+        /// far over a streaming frame budget (scatter models are small and stay lazy)
+        void Prewarm()
+        {
+            warmed = true; var sw = System.Diagnostics.Stopwatch.StartNew();
+            foreach (var kv in PlotTypes) foreach (var t in kv.Value.types) for (int v = 0; v < 6; v++) Model(t.id, t.build, v);
+            foreach (var lm in Regions.Landmarks) Model(lm.id, lm.build, 0);
+            foreach (var site in ZoneWorld.Sites) ZoneGates.Get(site);
+            PrewarmMs = sw.Elapsed.TotalMilliseconds;
+        }
         /// call every frame with the player's sim position; `immediate` builds everything now
         public void Update(Vector3 center, bool immediate = false)
         {
+            if (immediate && !warmed) Prewarm();
+            frameWatch.Restart();
             Terrain.Focus(center);
             var c = WorldCollision.KeyOf(center.x, center.z);
             var todo = new List<Vector2Int>();
@@ -49,10 +69,27 @@ namespace Soul
                 if (!loaded.ContainsKey(k) && InWorld(k)) todo.Add(k);
             }
             todo.Sort((a, b) => (a - c).sqrMagnitude.CompareTo((b - c).sqrMagnitude));
-            int n = immediate ? todo.Count : Mathf.Min(buildPerFrame, todo.Count);
-            for (int i = 0; i < n; i++) Build(todo[i]);
+            foreach (var k in todo) if (!jobs.Exists(j => j.k == k)) jobs.Add((k, Build(k)));
+            jobs.Sort((a, b) => (a.k - c).sqrMagnitude.CompareTo((b.k - c).sqrMagnitude));
+            // a step starts only if a typical step (running mean) still fits the budget; one step per frame always runs
+            bool ran = false;
+            for (int i = 0; i < jobs.Count; i++)
+            {
+                var (k, job) = jobs[i];
+                bool urgent = immediate || (Mathf.Abs(k.x - c.x) <= 1 && Mathf.Abs(k.y - c.y) <= 1);
+                bool Fits() => urgent || !ran || frameWatch.Elapsed.TotalMilliseconds + stepMean <= budgetMs;
+                if (!Fits()) break;
+                bool more;
+                do
+                {
+                    double t0 = frameWatch.Elapsed.TotalMilliseconds; more = job.MoveNext(); ran = true;
+                    stepMean = Mathf.Lerp((float)stepMean, (float)(frameWatch.Elapsed.TotalMilliseconds - t0), .1f);
+                } while (more && Fits());
+                if (!more) { jobs.RemoveAt(i); i--; }
+            }
             var drop = new List<Vector2Int>();
             foreach (var k in loaded.Keys) if (Mathf.Abs(k.x - c.x) > unloadRadius || Mathf.Abs(k.y - c.y) > unloadRadius) drop.Add(k);
+            jobs.RemoveAll(j => drop.Contains(j.k));
             // wall gates vanish once their part is owned (Shift+1..6 toggles them live)
             for (int i = gateSolids.Count - 1; i >= 0; i--)
             {
@@ -74,7 +111,7 @@ namespace Soul
                 var gt = kv.Value.transform.Find("ground"); if (gt) Object.Destroy(gt.GetComponent<MeshFilter>().sharedMesh);
                 kv.Value.SetActive(false); Object.Destroy(kv.Value); WorldCollision.Unregister(kv.Key);   // hide now: Destroy waits for the end of the frame
             }
-            loaded.Clear(); gateSolids.Clear();
+            loaded.Clear(); gateSolids.Clear(); jobs.Clear();
             Update(center, true);
         }
         static bool InWorld(Vector2Int k)
@@ -84,12 +121,31 @@ namespace Soul
             return x0 + CHUNK > ZoneWorld.MinX - M && x0 < ZoneWorld.MaxX + M && z0 + CHUNK > ZoneWorld.MinZ - M && z0 < ZoneWorld.MaxZ + M;
         }
 
-        void Build(Vector2Int k)
+        /// time per build stage (ms, summed over all chunks built; Prof[PROF_N] = chunks) for tests
+        public static readonly double[] Prof = new double[PROF_N + 1];
+        public const int PROF_N = 8;   // 0 terrain tiles, 1 ground mesh, 2 ground detail, 3 water, 4 ridge/gates/landmarks/plots, 5 scatter, 6 trail props, 7 reeds/dressing/collision
+        /// slowest single step so far (ms) and its stage, for tests
+        public static double MaxStep; public static int MaxStepStage;
+        static long Lap(int stage, long t0)
+        {
+            long t = System.Diagnostics.Stopwatch.GetTimestamp(); double ms = (t - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            Prof[stage] += ms; if (ms > MaxStep) { MaxStep = ms; MaxStepStage = stage; }
+            return t;
+        }
+        /// one chunk, built in steps (each `yield` hands the frame back when the streaming budget is spent)
+        IEnumerator<bool> Build(Vector2Int k)
         {
             var go = new GameObject($"chunk {k.x},{k.y}"); go.transform.SetParent(root, false);
-            loaded[k] = go;
+            loaded[k] = go; Prof[PROF_N]++;
             float x0 = k.x * CHUNK, z0 = k.y * CHUNK;
-            BuildGround(go.transform, x0, z0);
+            long t = System.Diagnostics.Stopwatch.GetTimestamp();
+            // terrain tiles this chunk samples (its own + neighbours: ground shading reads 2.5 m across the edge), one per step
+            for (int dx = -1; dx <= 1; dx++) for (int dz = -1; dz <= 1; dz++)
+            {
+                var tk = new Vector2Int(k.x + dx, k.y + dz);
+                foreach (var _ in Terrain.BuildSteps(tk, 4)) { t = Lap(0, t); yield return true; t = System.Diagnostics.Stopwatch.GetTimestamp(); }
+            }
+            foreach (int stage in BuildGround(go.transform, x0, z0)) { t = Lap(stage, t); yield return true; t = System.Diagnostics.Stopwatch.GetTimestamp(); }
             var cols = new List<WorldCollision.Col>(); var surfs = new List<WorldCollision.Surf>();
             var placed = new List<Vector3>();   // x, z, footprint
             var rng = new System.Random(Hash(k.x, k.y, 1234));   // reassigned to the bloom RNG for purified decor (see below)
@@ -124,6 +180,7 @@ namespace Soul
                 placed.Add(new Vector3(pp.x, pp.z, m.footprint));
                 if (pp.x >= x0 && pp.x < x0 + CHUNK && pp.z >= z0 && pp.z < z0 + CHUNK) Place(go.transform, m, pp, pyaw, 1, cols, surfs);
             }
+            t = Lap(4, t); yield return true; t = System.Diagnostics.Stopwatch.GetTimestamp();
             // regular scatter: candidates are tested against the region at their own position
             // regular scatter + (purified zones) bloom decor drawn from its own RNG so the base layout never moves
             var rngBloom = new System.Random(Hash(k.x, k.y, 777)); var rngBase = rng;
@@ -136,7 +193,7 @@ namespace Soul
                     rng = pass == 1 ? rngBloom : rngBase;
                 foreach (var s in list)
                 {
-                    int count = Mathf.FloorToInt(s.perChunk + R());
+                    int count = Mathf.FloorToInt(s.perChunk * (pass == 1 && GrudgeParts.IsCleansed(zoneDef.index) ? 1.8f : 1) + R());   // pod-purified grudge part: the zone greens further
                     for (int i = 0; i < count * 3 && count > 0; i++)
                     {
                         float x = x0 + R() * CHUNK, z = z0 + R() * CHUNK; float yaw = R() * Mathf.PI * 2, scale = .85f + R() * .3f; int variant = (int)(R() * s.variants);
@@ -146,6 +203,7 @@ namespace Soul
                         if (m.surfaces.Count > 0) scale = 1;            // climbable heights are authored; never rescale them
                         float fp = m.footprint * scale;
                         if (s.decor ? ZoneWorld.Solid(x, z) || ZoneWorld.NearestSite(new Vector3(x, 0, z), 16) != null || ZoneAreas.Blocked(x, z, -6) || ZoneRoutes.Dist(x, z) < ZoneRoutes.HALF : !ZoneWorld.Clear(x, z, fp)) continue;   // keep ridges and corridors clear
+                        if (InWater(x, z, fp, s.id)) continue;
                         if (!s.decor)
                         {
                             bool clear = true;
@@ -159,13 +217,15 @@ namespace Soul
                     }
                 }
                 }
+            t = Lap(5, t); yield return true; t = System.Diagnostics.Stopwatch.GetTimestamp();
             // route guiding: debris lining the trails (solid) and traces on them (decor)
-            routeTmp.Clear(); ZoneRoutes.Placements(x0, z0, CHUNK, routeTmp);
+            var routeTmp = new List<ZoneRoutes.Placement>(); ZoneRoutes.Placements(x0, z0, CHUNK, routeTmp);   // per job: jobs interleave
             foreach (var pl in routeTmp)
             {
                 if (ZoneWorld.Solid(pl.pos.x, pl.pos.z) || ZoneAreas.Blocked(pl.pos.x, pl.pos.z, -4)) continue;
                 var (id, build) = pl.kind == 0 ? ZoneRoutes.EdgeModel(pl.zone, pl.seed) : TraceProps.Trace(pl.zone, pl.seed);
                 var m = Model(id, build, Mathf.Abs(pl.seed) % (id == "RubblePile" ? 12 : 6));
+                if (InWater(pl.pos.x, pl.pos.z, m.footprint, id)) continue;
                 if (pl.kind == 0)
                 {
                     bool clear = true; foreach (var p in placed) { float dx = p.x - pl.pos.x, dz = p.y - pl.pos.z, min = p.z + m.footprint + .8f; if (dx * dx + dz * dz < min * min) { clear = false; break; } }
@@ -175,7 +235,9 @@ namespace Soul
                 }
                 else Place(go.transform, m, pl.pos, pl.yaw, 1, null, null);
             }
-            // water edges: reeds on shores, scum on the surface (WaterProps, Codex-owned meshes)
+            t = Lap(6, t); yield return true; t = System.Diagnostics.Stopwatch.GetTimestamp();
+            // water edges: reeds on shores (WaterProps, Codex-owned meshes). Floating scum rafts are off (read as
+            // debris stuck in the ground from the top-down camera, user 2026-11-07); SOUL/Water draws algae instead.
             {
                 var wr = new System.Random(Hash(k.x, k.y, 919));
                 for (int i = 0; i < 40; i++)
@@ -184,7 +246,6 @@ namespace Soul
                     float d = Terrain.Water(x, z, out int wt); if (wt == Terrain.WATER_NONE && d <= 0) continue;
                     int zone = ZoneWorld.At(x, z);
                     if (d > .03f && d < .2f && wt != Terrain.WATER_OIL && wt != Terrain.WATER_CLEAN) { var (id, build) = WaterProps.Reeds(zone); Place(go.transform, Model(id, build, v), new Vector3(x, 0, z), yaw, .85f + (float)wr.NextDouble() * .4f, null, null); }
-                    else if (d > .25f && i % 3 == 0) { var (id, build) = WaterProps.Scum(zone); Place(go.transform, Model(id, build, v), new Vector3(x, d - .04f, z), yaw, 1, null, null); }
                 }
             }
             // border dressing (Codex-owned look)
@@ -195,8 +256,17 @@ namespace Soul
                 dg.AddComponent<MeshFilter>().sharedMesh = dress; var dr = dg.AddComponent<MeshRenderer>(); dr.sharedMaterial = ridgeMat;
             }
             WorldCollision.Register(k, cols, surfs);
+            Lap(7, t);
         }
-        readonly List<ZoneRoutes.Placement> routeTmp = new List<ZoneRoutes.Placement>();
+        /// props stay out of water (user 2026-11-07): centre or footprint rim in water deeper than 5 cm. Only the
+        /// mire (Z6) keeps dead trees, stumps and root tangles standing in it, like a drowned forest.
+        static bool InWater(float x, float z, float r, string id)
+        {
+            if ((id == "DeadTree" || id == "Stump" || id == "RootTangle") && ZoneWorld.At(x, z) == 6) return false;
+            if (Terrain.Water(x, z, out _) > .05f) return true;
+            for (int a = 0; a < 6; a++) { float t = a * Mathf.PI / 3; if (Terrain.Water(x + Mathf.Cos(t) * r, z + Mathf.Sin(t) * r, out _) > .05f) return true; }
+            return false;
+        }
 
         // ---------- plot grid for large structures (ruin zones) ----------
         const float PLOT = 48;
@@ -211,32 +281,50 @@ namespace Soul
         /// centres of the structure plots overlapping a square (Terrain flattens under them)
         public static IEnumerable<Vector2> PlotCentres(float x0, float z0, float size)
         {
+            foreach (var p in PlotPads(x0, z0, size)) yield return p.c;
+        }
+        /// local half extents of each structure (measured over its variants, + 1.5 m apron): the flat pad Terrain levels
+        static readonly Dictionary<string, Vector2> PadHalf = new Dictionary<string, Vector2>
+        {
+            ["ApartmentRuin"] = new Vector2(10.7f, 11.3f), ["ShopRow"] = new Vector2(15.6f, 10.5f), ["ParkingDeck"] = new Vector2(14.6f, 9.6f),
+            ["Overpass"] = new Vector2(8.1f, 21.2f), ["StairRuin"] = new Vector2(6.1f, 6.4f), ["CollapsedTower"] = new Vector2(18.4f, 11.5f),
+        };
+        /// structure plots overlapping a square: centre, pad half extents (structure frame), yaw
+        public static IEnumerable<(Vector2 c, Vector2 half, float yaw)> PlotPads(float x0, float z0, float size)
+        {
             for (int cx = Mathf.FloorToInt(x0 / PLOT); cx <= Mathf.FloorToInt((x0 + size) / PLOT); cx++)
                 for (int cz = Mathf.FloorToInt(z0 / PLOT); cz <= Mathf.FloorToInt((z0 + size) / PLOT); cz++)
-                    if (PlotAt(cx, cz, out var p, out _, out _, out _)) yield return new Vector2(p.x, p.z);
+                    if (PlotAt(cx, cz, out var p, out var yaw, out var type, out _))
+                        yield return (new Vector2(p.x, p.z), PadHalf.TryGetValue(type.id, out var h) ? h : new Vector2(12, 12), yaw);
         }
         static Material waterMat;
-        static readonly Color[] WaterCol = { Color.clear, new Color(.32f, .38f, .42f, .55f), new Color(.2f, .27f, .14f, .7f), new Color(.45f, .95f, .2f, .78f), new Color(.03f, .03f, .035f, .82f) };
-        /// translucent water surface over the basins of this chunk
+        // deep body colour per kind (sRGB, a = opacity when deep); SOUL/Water derives shallow tint, foam and glints
+        static readonly Color[] WaterCol = { Color.clear, new Color(.2f, .27f, .31f, .78f), new Color(.12f, .15f, .08f, .88f), new Color(.17f, .36f, .08f, .94f), new Color(.02f, .02f, .025f, .95f) };
+        /// water surface over the basins of this chunk (SOUL/Water: uv = depth in metres, kind; uv1.x = toxic weight)
         void BuildWater(Transform parent, float x0, float z0)
         {
             var k = WorldCollision.KeyOf(x0 + 1, z0 + 1); Terrain.Grid(k, out _, out var surf, out var depth, out var type);
-            int n = 32, s = n + 1; var v = new List<Vector3>(); var c = new List<Color>(); var tri = new List<int>();
+            var tox = Terrain.ToxGrid(k);
+            int n = 32, s = n + 1; var v = new List<Vector3>(); var c = new List<Color>(); var uv = new List<Vector2>(); var uv1 = new List<Vector2>(); var tri = new List<int>();
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++)
             {
                 int a = i * s + j, b = (i + 1) * s + j, cc = (i + 1) * s + j + 1, d = i * s + j + 1;
                 if (Mathf.Max(Mathf.Max(depth[a], depth[b]), Mathf.Max(depth[cc], depth[d])) < .03f) continue;
-                int ty = Mathf.Max(Mathf.Max(type[a], type[b]), Mathf.Max(type[cc], type[d])); if (ty == 0) ty = Terrain.WATER_MIRE;
+                int ty = Mathf.Max(Mathf.Max(type[a], type[b]), Mathf.Max(type[cc], type[d])); if (ty == 0 || ty == Terrain.WATER_TOXIC) ty = Terrain.WATER_MIRE;   // sludge = mire + tox weight (uv1)
                 var col = WaterCol[ty].linear; col.a = WaterCol[ty].a;
                 int o = v.Count;
                 v.Add(Sim.ToUnity(new Vector3(x0 + i, surf[a], z0 + j))); v.Add(Sim.ToUnity(new Vector3(x0 + i + 1, surf[b], z0 + j)));
                 v.Add(Sim.ToUnity(new Vector3(x0 + i + 1, surf[cc], z0 + j + 1))); v.Add(Sim.ToUnity(new Vector3(x0 + i, surf[d], z0 + j + 1)));
-                foreach (int vi in new[] { a, b, cc, d }) { var cv = col; cv.a = col.a * Sim.SmoothStep(depth[vi], .02f, .16f); c.Add(cv); }   // shoreline fades out
+                foreach (int vi in new[] { a, b, cc, d }) { c.Add(col); uv.Add(new Vector2(depth[vi], ty)); uv1.Add(new Vector2(tox[vi], 0)); }
                 tri.Add(o); tri.Add(o + 2); tri.Add(o + 3); tri.Add(o); tri.Add(o + 1); tri.Add(o + 2);
             }
             if (tri.Count == 0) return;
-            if (!waterMat) waterMat = Mats.Unlit(Color.white, Blend.Alpha, true, UnityEngine.Rendering.CullMode.Off, false);
-            var mesh = new Mesh { name = "water" }; mesh.SetVertices(v); mesh.SetColors(c); mesh.SetTriangles(tri, 0); mesh.RecalculateBounds();
+            if (!waterMat)
+            {
+                var sh = Shader.Find("SOUL/Water");
+                waterMat = sh ? new Material(sh) : Mats.Unlit(Color.white, Blend.Alpha, true, UnityEngine.Rendering.CullMode.Off, false);
+            }
+            var mesh = new Mesh { name = "water" }; mesh.SetVertices(v); mesh.SetColors(c); mesh.SetUVs(0, uv); mesh.SetUVs(1, uv1); mesh.SetTriangles(tri, 0); mesh.RecalculateBounds();
             var g = new GameObject("water"); g.transform.SetParent(parent, false);
             g.AddComponent<MeshFilter>().sharedMesh = mesh; var mr = g.AddComponent<MeshRenderer>(); mr.sharedMaterial = waterMat; mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
@@ -302,7 +390,8 @@ namespace Soul
             PropCount++;
         }
 
-        void BuildGround(Transform parent, float x0, float z0)
+        /// ground mesh in steps; yields the profile stage that just ran (1 mesh rows, 2 detail, 3 water)
+        IEnumerable<int> BuildGround(Transform parent, float x0, float z0)
         {
             // smooth grid: one vertex colour per grid point (no per-cell facets / checkerboard)
             int n = (int)(CHUNK / CELL), s = n + 1;
@@ -315,7 +404,11 @@ namespace Soul
                 float y = Terrain.Height(x, z);
                 float gxs = Terrain.Height(x + .7f, z) - Terrain.Height(x - .7f, z), gzs = Terrain.Height(x, z + .7f) - Terrain.Height(x, z - .7f);
                 verts[idx] = Sim.ToUnity(new Vector3(x, y - .012f, z)); nor[idx] = Sim.ToUnity(new Vector3(-gxs / 1.4f, 1, -gzs / 1.4f).normalized);
-                cols[idx] = Regions.GroundColor(x, z).linear;
+                // relief read from above: slope / cliff rock / foot shadow / lip light, multiplied over the zone colour
+                float grade = Mathf.Sqrt(gxs * gxs + gzs * gzs) / 1.4f;
+                float hollow = (Terrain.Height(x + 2.5f, z) + Terrain.Height(x - 2.5f, z) + Terrain.Height(x, z + 2.5f) + Terrain.Height(x, z - 2.5f)) * .25f - y;
+                cols[idx] = GroundLook.Relief(Regions.GroundColor(x, z), grade > .75f ? ZoneWorld.At(x, z) : 0, x, y, z, grade, hollow).linear;
+                if (j == n && i % 6 == 5 && i < n) yield return 1;   // vertex rows in sixths
             }
             var tris = new List<int>();
             for (int i = 0; i < n; i++) for (int j = 0; j < n; j++)
@@ -326,14 +419,17 @@ namespace Soul
                 // sim CCW (a,d,c),(a,c,b) seen from above; flipped for Unity
                 tris.Add(a); tris.Add(c); tris.Add(d); tris.Add(a); tris.Add(b); tris.Add(c);
             }
-            if (tris.Count == 0) return;
+            if (tris.Count == 0) yield break;
+            yield return 1;
             var gd = GroundDetail.Decals(x0, z0, CHUNK);   // Codex-owned ground details (cracks, markings, litter)
             if (gd)
             {
                 var dg = new GameObject("ground detail"); dg.transform.SetParent(parent, false);
                 dg.AddComponent<MeshFilter>().sharedMesh = gd; var dr = dg.AddComponent<MeshRenderer>(); dr.sharedMaterial = propMat; dr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
+            yield return 2;
             BuildWater(parent, x0, z0);
+            yield return 3;
             var mesh = new Mesh { name = "ground", vertices = verts, colors = cols, normals = nor, triangles = tris.ToArray() };
             if (verts.Length > 65000) mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
             mesh.RecalculateBounds();

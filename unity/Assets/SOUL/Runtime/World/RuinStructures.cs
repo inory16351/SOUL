@@ -83,25 +83,45 @@ namespace Soul
             }
         }
 
-        // Independent, angular fragments. The supplied height field is sampled at
-        // EVERY corner, so even steep rubble stays within 0.18 m of its route.
+        // Sparse, independent angular fragments. columns * rows still controls the
+        // density, but rejection sampling removes the old regular paving pattern.
+        // The supplied height field is sampled at every corner so steep rubble
+        // remains close to its registered route.
         internal static void Fragments(MeshBuilder b, float width, float depth,
             System.Func<float, float, float> surface, int columns, int rows, bool round = false)
         {
-            for (int j = 0; j < rows; j++) for (int i = 0; i < columns; i++)
+            int target = Mathf.Clamp(Mathf.RoundToInt(columns * rows * .1f), 3, 18);
+            float cellX = width / columns, cellZ = depth / rows;
+            float spacing = Mathf.Sqrt(width * depth / target) * .38f;
+            var placed = new List<Vector2>();
+            int attempts = target * 18;
+            for (int n = 0; n < attempts && placed.Count < target; n++)
             {
-                float x = ((i+.5f+b.Range(-.05f,.05f))/columns-.5f)*width;
-                float z = ((j+.5f+b.Range(-.05f,.05f))/rows-.5f)*depth;
-                float dx = width/columns*b.Range(.39f,.45f), dz = depth/rows*b.Range(.36f,.45f);
-                if (round && (Mathf.Abs(x)+dx)*(Mathf.Abs(x)+dx) +
-                    (Mathf.Abs(z)+dz)*(Mathf.Abs(z)+dz) > width*width*.25f) continue;
-                float lift = b.Range(.035f, .15f);
+                float dx = cellX * b.Range(.34f, 1.05f), dz = cellZ * b.Range(.32f, .95f);
+                float angle = b.Range(-Mathf.PI, Mathf.PI), cs = Mathf.Cos(angle), sn = Mathf.Sin(angle);
+                float reachX = Mathf.Abs(cs) * dx + Mathf.Abs(sn) * dz;
+                float reachZ = Mathf.Abs(sn) * dx + Mathf.Abs(cs) * dz;
+                if (reachX * 2 >= width || reachZ * 2 >= depth) continue;
+                float x = b.Range(-width * .5f + reachX, width * .5f - reachX);
+                float z = b.Range(-depth * .5f + reachZ, depth * .5f - reachZ);
+                if (round && Mathf.Sqrt(x * x + z * z) + Mathf.Sqrt(dx * dx + dz * dz) > width * .5f) continue;
+                bool clear = true;
+                for (int i = 0; i < placed.Count; i++)
+                    if ((placed[i] - new Vector2(x, z)).sqrMagnitude < spacing * spacing) { clear = false; break; }
+                if (!clear) continue;
+                placed.Add(new Vector2(x, z));
+
+                float lift = b.Range(.025f, .13f);
                 Vector3 P(float u, float v, float h) => V(u, surface(u,v)+h, v);
-                Vector3 a = P(x-dx, z-dz*b.Range(.35f,.9f), lift*.4f);
-                Vector3 c = P(x+dx*b.Range(.35f,.9f),z-dz,lift);
-                Vector3 d = P(x+dx,z+dz*b.Range(.35f,.9f),lift*.65f);
-                Vector3 e = P(x-dx*b.Range(.35f,.9f),z+dz,lift*.8f);
-                Color color = b.Jitter(b.Chance(.14f) ? 0x79503f : b.Chance(.3f) ? Dark : Concrete);
+                Vector2 R(float u, float v) => new Vector2(x + u * cs + v * sn, z - u * sn + v * cs);
+                Vector2 pa = R(-dx, -dz * b.Range(.45f, .9f));
+                Vector2 pc = R(dx * b.Range(.4f, .92f), -dz);
+                Vector2 pd = R(dx, dz * b.Range(.45f, .95f));
+                Vector2 pe = R(-dx * b.Range(.4f, .9f), dz);
+                Vector3 a = P(pa.x, pa.y, lift * .35f), c = P(pc.x, pc.y, lift);
+                Vector3 d = P(pd.x, pd.y, lift * .62f), e = P(pe.x, pe.y, lift * .78f);
+                float pick = b.Rand();
+                Color color = b.Jitter(pick < .04f ? 0x79503f : pick < .27f ? Dark : Concrete, .11f);
                 b.Quad(a,e,d,c,color);
                 var corners = new[] { a,e,d,c };
                 for (int k=0;k<4;k++)
@@ -109,11 +129,14 @@ namespace Soul
                     Vector3 u=corners[k], v=corners[(k+1)%4];
                     b.Quad(P(u.x,u.z,-.06f),P(v.x,v.z,-.06f),v,u,C(Interior));
                 }
-                if ((i+j*columns)%11 == 0)
+                if (b.Chance(.08f))
                 {
-                    Vector3 root=P(x,z,.12f), bend=P(x+dx*.7f,z,.17f);
+                    float bx = Mathf.Clamp(x + dx * .7f, -width * .5f + .02f, width * .5f - .02f);
+                    float ex = Mathf.Clamp(x + dx * .9f, -width * .5f + .02f, width * .5f - .02f);
+                    float ez = Mathf.Clamp(z + dz * .5f, -depth * .5f + .02f, depth * .5f - .02f);
+                    Vector3 root=P(x,z,.12f), bend=P(bx,z,.17f);
                     b.Beam(root,bend,.017f,.015f,3,C(Rust));
-                    b.Beam(bend,P(x+dx*.9f,z+dz*.5f,.1f),.015f,.01f,3,C(Rust));
+                    b.Beam(bend,P(ex,ez,.1f),.015f,.01f,3,C(Rust));
                 }
             }
         }

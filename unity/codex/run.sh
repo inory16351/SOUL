@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the Codex modeling jobs in order (01_*.md ... 05_*.md), each with the shared rules prepended.
+# Runs the Codex modeling jobs in order (01_*.md, 02_*.md, ...), each with the shared rules prepended.
 # A job that finishes is marked in done/<job>; a usage-limit error stops the run with exit code 75 so a
 # caller can retry later. Re-running skips finished jobs.
 #   bash unity/codex/run.sh            run all pending jobs
@@ -18,7 +18,8 @@ if [ "${1:-}" = "--probe" ]; then
   echo "UNKNOWN (see $out)"; exit 1
 fi
 
-for job in "$DIR"/0[1-9]_*.md; do
+for job in "$DIR"/[0-9][0-9]_*.md; do
+  [ "$(basename "$job")" = "00_common.md" ] && continue
   id="$(basename "$job" .md)"
   [ -f "$DIR/done/$id" ] && { echo "skip $id (done)"; continue; }
   echo "=== $id  $(date '+%H:%M:%S')"

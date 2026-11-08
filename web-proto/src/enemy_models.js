@@ -331,187 +331,317 @@ export function createWarden() {
   };
 }
 
-/** Warden of Ash: a walking furnace held together by the ruins it has consumed. */
+/** Warden of Ash: a hateful soul wearing the carcass of a scrap-machine beast. */
 export function createAshWarden() {
   const { metal, cloth } = materials();
-  const concrete = metal.clone();
-  concrete.roughness = 1;
-  concrete.metalness = .04;
   const root = pivot(null, 'ash-warden');
-  // Warden joint offsets baked at 1.6x; all pivots retain identity rotation/scale.
-  const pelvis = pivot(root, 'pelvis', [0, 1.68, 0]);
-  const torso = pivot(pelvis, 'torso', [0, .40, 0]);
-  scrap(pelvis, 'ash-pelvic-frame', [
-    [rod([-.40, 0, 0], [.40, 0, 0], .10), 'iron'],
-    [box([.48, .19, .32], [0, .055, -.055], [0, 0, .07]), 'rust'],
-    [rod([-.30, .10, .20], [.28, .06, .20], .035), 'edge'],
-  ], metal);
-  scrap(pelvis, 'broken-foundation-apron', [
-    [plate([[-.34, .14], [-.04, .12], [-.075, -.14], [-.20, -.24], [-.33, -.13]], .15, .18), 'concrete'],
-    [plate([[.025, .10], [.33, .16], [.37, -.04], [.25, -.20], [.09, -.15]], .13, .15), 'ash'],
-  ], concrete);
 
-  const frame = [
-    [rod([0, -.34, -.23], [0, 1.43, -.25], .075), 'iron'],
-    [rod([-.14, -.28, -.12], [-.23, 1.30, -.19], .035), 'rust'],
-    [rod([.14, -.28, -.12], [.22, 1.30, -.19], .035), 'rust'],
-    [rod([-.66, 1.28, 0], [.66, 1.28, 0], .075), 'iron'],
-    [rod([0, 1.36, -.19], [0, 1.75, .015], .07), 'edge'],
+  function ring(position, major, tube, rotation = [Math.PI / 2, 0, 0], segments = 10) {
+    const geometry = new THREE.TorusGeometry(major, tube, 5, segments);
+    geometry.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...rotation)));
+    return geometry.translate(...position);
+  }
+
+  function addJoint(parent, name, radius) {
+    scrap(parent, name, [
+      [bearing([0, 0, 0], radius), 'oil'],
+      [ring([0, 0, 0], radius * .82, radius * .18, [0, Math.PI / 2, 0], 8), 'rust'],
+    ], metal);
+  }
+
+  function topPlate(points, thickness, y) {
+    return plate(points, thickness).rotateX(Math.PI / 2).translate(0, y, 0);
+  }
+
+  function clawBlade(x, z, length, width, yaw = 0) {
+    const geometry = plate([
+      [-width * .50, 0], [width * .50, 0], [width * .42, length * .42],
+      [width * .18, length * .82], [0, length], [-width * .22, length * .72],
+    ], .10);
+    return geometry.rotateX(Math.PI / 2).rotateY(yaw).translate(x, -.10, z);
+  }
+
+  function soulPair(parent, name, left, right, scale, color) {
+    const positions = [];
+    for (const point of [left, right]) {
+      const original = pebble(point, scale, 1);
+      const source = original.index ? original.toNonIndexed() : original;
+      positions.push(...source.attributes.position.array);
+      if (source !== original) source.dispose();
+      original.dispose();
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+      color: new THREE.Color(...color), toneMapped: false,
+    }));
+    mesh.name = name;
+    mesh.castShadow = true;
+    parent.add(mesh);
+    return mesh;
+  }
+
+  // A long, low spine. Every transform lives in geometry or position so Unity
+  // can layer procedural rotations over identity rest rotations and scales.
+  const pelvis = pivot(root, 'pelvis', [0, 1.08, -1.65]);
+  scrap(pelvis, 'pelvis-scrap-cradle', [
+    [box([1.62, .62, 1.42], [0, .06, -.08], [.02, -.04, -.02]), 'oil'],
+    [box([1.36, .42, 1.18], [-.08, .35, -.02], [-.04, .08, .04]), 'rust'],
+    [topPlate([[-.78, -.68], [-.58, .63], [-.20, .79], [.45, .72], [.78, .38], [.70, -.60]], .11, .64), 'iron'],
+    [topPlate([[-.66, -.64], [-.18, -.77], [.08, -.55], [-.02, .18], [-.42, .43], [-.72, .15]], .08, .70), 'bone'],
+    [rod([-.73, .42, -.52], [.70, .40, -.47], .105), 'edge'],
+    [rod([-.66, -.20, .50], [.65, -.18, .44], .09), 'rust'],
+    [ring([.61, .42, -.28], .31, .095, [0, Math.PI / 2, 0], 10), 'oil'],
+    [box([.30, .22, .38], [.56, .63, .20], [.08, -.12, .13]), 'rust'],
+  ], metal);
+  scrap(pelvis, 'pelvis-caught-rags', [
+    [rag(-.43, .25, -.60, .31, .60, -.08), 'ashCloth'],
+    [rag(.35, .21, -.55, .24, .45, .06), 'ash'],
+  ], cloth);
+
+  const s0 = pivot(pelvis, 's0', [0, .08, .62]);
+  const s1 = pivot(s0, 's1', [0, .06, .72]);
+  const s2 = pivot(s1, 's2', [0, .06, .72]);
+  const spine = [s0, s1, s2];
+  for (let i = 0; i < spine.length; i++) {
+    const section = spine[i];
+    const width = 1.72 + i * .10;
+    scrap(section, `spine-${i}-vertebra`, [
+      [box([width, .62, 1.00], [0, .05, .34], [.02, i % 2 ? .025 : -.025, 0]), 'oil'],
+      [rod([0, -.05, -.22], [0, .03, .90], .18, .16, 8), i === 1 ? 'rust' : 'iron'],
+      [topPlate([[-width * .48, -.14], [-width * .36, .78], [-.08, .91], [.12, .72], [.46 * width, .66], [.49 * width, -.18]], .09, .41), i === 1 ? 'rust' : 'iron'],
+      [topPlate([[-width * .42, -.16], [-width * .48, .44], [-width * .18, .64], [-.05, .38], [-.12, -.13]], .07, .48), 'bone'],
+      [rod([-.69 - i * .03, .12, -.14], [-.75 - i * .03, .10, .82], .065), 'rust'],
+      [rod([.69 + i * .03, .10, -.14], [.75 + i * .03, .12, .82], .065), 'edge'],
+      [box([.30, .18, .36], [i % 2 ? -.56 : .54, .39, .22], [.05, .15, -.08]), 'rust'],
+    ], metal);
+  }
+
+  const torso = pivot(s2, 'torso', [0, .06, .45]);
+  const ribs = [
+    [box([1.38, .70, 1.12], [0, .02, .05], [.02, 0, -.02]), 'oil'],
+    [rod([0, -.18, -.46], [0, .17, .72], .15), 'iron'],
+    [box([.72, .45, .72], [.22, .32, -.05], [-.08, .12, .06]), 'rust'],
   ];
-  for (let row = 0; row < 3; row++) {
-    const y = .30 + row * .30;
+  for (let row = 0; row < 5; row++) {
+    const z = -.38 + row * .25;
     for (const side of [-1, 1]) {
-      frame.push([rod([side * .10, y, -.25], [side * .40, y + .07, -.10], .033), 'rust']);
-      frame.push([rod([side * .40, y + .07, -.10], [side * .35, y -.04, .25], .032), 'iron']);
+      const reach = .88 - Math.abs(row - 2) * .035;
+      ribs.push([rod([side * .12, .23, z], [side * reach, .34, z + .01], .075), row % 2 ? 'rust' : 'iron']);
+      ribs.push([rod([side * reach, .34, z + .01], [side * .74, -.26, z + .10], .070), 'edge']);
+      ribs.push([box([.23, .18, .31], [side * .76, .18, z + .04], [0, side * .08, side * .18]), row === 2 ? 'bone' : 'rust']);
     }
   }
-  scrap(torso, 'furnace-rebar-frame', frame, metal);
-  const core = glow(torso, 'captive-soul', [0, .736, .10], [.27, .40, .25], [5.2, .38, .055]);
-  // Separate slabs leave a jagged central fissure and an open top over the ember.
-  scrap(torso, 'split-concrete-furnace', [
-    [plate([[-.49, 1.19], [-.18, 1.26], [-.055, 1.08], [-.12, .87], [-.055, .70],
-      [-.13, .56], [-.08, .33], [-.30, .20], [-.46, .38]], .19, .32), 'concrete'],
-    [plate([[.12, 1.16], [.40, 1.22], [.51, 1.02], [.43, .78], [.46, .40],
-      [.23, .23], [.06, .37], [.13, .59], [.07, .77], [.16, .96]], .17, .34), 'ash'],
-    [plate([[-.35, 1.21], [-.43, 1.00], [-.34, .31], [-.06, .20], [.31, .29],
-      [.42, .80], [.32, 1.19], [.08, 1.27]], .16, -.31), 'ash'],
-    [pebble([-.30, 1.25, -.18], [.22, .12, .23]), 'concrete'],
-    [pebble([.31, 1.23, -.12], [.20, .10, .20]), 'concrete'],
-  ], concrete);
-  const straps = [
-    [box([.77, .09, .12], [0, .27, .28], [0, .04, -.06]), 'rust'],
-    [plate([[-.47, 1.10], [-.30, 1.16], [-.24, .97], [-.40, .85]], .035, .43), 'rust'],
-    [plate([[.26, .51], [.44, .55], [.40, .37], [.21, .30]], .035, .435), 'iron'],
-    [rod([-.23, 1.24, -.08], [-.29, 1.47, -.04], .024), 'rust'],
-    [rod([-.29, 1.47, -.04], [-.41, 1.49, .025], .021, .012), 'rust'],
-    [rod([.29, 1.20, -.11], [.37, 1.40, -.18], .024, .015), 'iron'],
-    // Charred fissures and rust runs sit on the slab faces, never on the glow.
-    [plate([[-.34, .96], [-.30, .96], [-.26, .71], [-.28, .54]], .006, .419), 'oil'],
-    [plate([[.32, 1.08], [.36, 1.07], [.31, .79], [.29, .69]], .006, .429), 'rust'],
+  scrap(torso, 'open-engine-ribcage', ribs, metal);
+  const machineJunk = [
+    [box([1.18, .40, .72], [0, .54, -.05], [.03, -.04, .01]), 'iron'],
+    [box([.48, .34, .48], [-.46, .56, -.06], [.08, -.12, -.04]), 'rust'],
+    [ring([.68, .42, .06], .27, .08, [0, Math.PI / 2, 0], 10), 'iron'],
+    [ring([-.51, .47, .28], .21, .065, [0, 0, 0], 9), 'rust'],
+    [rod([-.70, .15, -.30], [-.62, .66, -.24], .070, .050), 'oil'],
+    [rod([.64, .15, -.28], [.54, .67, -.18], .060, .042), 'rust'],
+    [topPlate([[-.78, -.46], [-.52, .57], [-.12, .69], [.13, .54], [.75, .48], [.84, -.36]], .08, .82), 'bone'],
   ];
-  for (const side of [-1, 1]) for (const y of [.32, 1.06]) {
-    straps.push([rod([side * .34, y, .42], [side * .34, y, .46], .037, .037, 6), 'edge']);
+  for (let i = 0; i < 8; i++) {
+    const angle = i / 8 * Math.PI * 2;
+    machineJunk.push([box([.10, .08, .08], [-.29 + Math.cos(angle) * .23,
+      .47 + Math.sin(angle) * .23, .24], [0, 0, angle]), i % 3 ? 'rust' : 'edge']);
   }
-  scrap(torso, 'furnace-straps-and-scorch', straps, metal);
+  for (let i = 0; i < 3; i++) {
+    const x = (i - 1) * .36;
+    machineJunk.push([rod([x, .69, -.27], [x + (i - 1) * .05, 1.38 + (i === 1 ? .10 : 0), -.30], .12, .095, 8), i === 1 ? 'iron' : 'rust']);
+    machineJunk.push([ring([x + (i - 1) * .05, 1.38 + (i === 1 ? .10 : 0), -.30], .13, .035, [0, 0, 0], 8), 'oil']);
+  }
+  scrap(torso, 'engine-junk', machineJunk, metal);
 
-  const head = pivot(torso, 'head', [0, 1.792, .04]);
-  scrap(head, 'sunken-furnace-mask', [
-    [pebble([0, -.025, -.025], [.26, .24, .22]), 'oil'],
-    [plate([[-.27, .12], [-.11, .19], [.24, .13], [.29, -.04], [.17, -.27],
-      [.035, -.32], [-.22, -.23]], .09, .20), 'concrete'],
-    [plate([[-.29, .115], [-.12, .18], [.25, .12], [.24, .035], [-.23, .015]], .08, .26), 'iron'],
-    [plate([[.04, -.10], [.21, -.07], [.16, -.25], [.06, -.29]], .055, .26), 'rust'],
-    [rod([-.035, -.065, .24], [-.035, -.065, .30], .093, .08, 8), 'oil'],
-    [rod([-.18, -.20, .25], [-.13, -.09, .25], .012), 'oil'],
+  const chest = pivot(torso, 'chest', [0, .12, .55]);
+  scrap(chest, 'cracked-furnace-chest', [
+    [box([1.62, .76, .94], [0, .00, .10], [.03, 0, .01]), 'oil'],
+    [plate([[-.80, .40], [-.52, .58], [-.13, .54], [-.05, .18], [-.18, -.34], [-.70, -.28]], .13, .55), 'rust'],
+    [plate([[-.02, .54], [.62, .47], [.82, .12], [.63, -.35], [.17, -.31], [.05, .15]], .13, .56), 'iron'],
+    [topPlate([[-.78, -.34], [-.62, .43], [-.18, .61], [.03, .43], [.66, .50], [.82, -.24]], .10, .48), 'bone'],
+    [rod([-.76, -.16, -.31], [.75, -.12, -.27], .085), 'edge'],
+    [rod([-.69, .45, -.23], [.65, .48, -.18], .065), 'rust'],
+    [ring([.64, .13, .44], .23, .060, [0, Math.PI / 2, 0], 10), 'iron'],
   ], metal);
-  const eye = glow(head, 'single-lens', [-.035, -.065, .32], [.061, .049, .032], [4.3, .65, .10]);
-  const crown = [];
-  // A low, broken rooftop aerial crown fits below y=4.32, rather than adding height.
-  for (let i = 0; i < 5; i++) {
-    const x = (i - 2) * .12, top = [.31, .42, .34, .39, .27][i];
-    crown.push([rod([x, .10, -.09], [x - .025, top - .06, -.12], .027, .022, 5), 'rust']);
-    crown.push([rod([x - .025, top - .06, -.12], [x + .045, top, -.16], .022, .011, 5), 'iron']);
-  }
-  crown.push([rod([-.25, .23, -.11], [.25, .20, -.11], .022, .019, 5), 'rust']);
-  crown.push([plate([[-.24, .11], [-.18, .28], [-.10, .19], [-.06, .10]], .08, -.02), 'concrete']);
-  scrap(head, 'broken-rebar-and-aerial-crown', crown, metal);
+  const core = glow(chest, 'core', [0, .03, .59], [.36, .38, .16], [5.4, .24, .035]);
+  scrap(chest, 'core-cage-and-seams', [
+    [rod([-.34, .45, .63], [.26, -.34, .64], .035), 'oil'],
+    [rod([.35, .42, .63], [-.25, -.31, .64], .035), 'oil'],
+    [ring([0, .03, .62], .43, .055, [0, 0, 0], 10), 'rust'],
+    [plate([[-.15, .40], [-.06, .45], [.02, .19], [-.03, .02]], .016, .672), 'rust'],
+    [plate([[.06, -.02], [.14, .02], [.06, -.27], [.01, -.35]], .016, .674), 'rust'],
+  ], metal);
 
-  // Each bearing is a removable arm-owned assembly: two armour collars with
-  // a hot exposed gap. Upper arms and rags begin below it, leaving the top visible.
-  function joint(parent, name, radius) {
-    scrap(parent, `${name}-split-bearing`, [
-      [rod([-radius, 0, 0], [-radius * .38, 0, 0], radius, radius, 8), 'iron'],
-      [rod([radius * .38, 0, 0], [radius, 0, 0], radius, radius, 8), 'rust'],
-      [rod([-radius * 1.08, 0, 0], [radius * 1.08, 0, 0], radius * .32, radius * .32, 6), 'oil'],
-    ], metal);
-    glow(parent, `${name}-hot-seam`, [0, 0, 0], [radius * .42, radius * .91, radius * .91], [2.8, .22, .035]);
+  const neck = pivot(chest, 'neck', [0, .10, .54]);
+  scrap(neck, 'cable-neck', [
+    [box([1.22, .48, .78], [0, .01, .16], [.02, 0, 0]), 'oil'],
+    [rod([-.36, -.17, -.18], [-.29, .09, .49], .11, .075), 'iron'],
+    [rod([.36, -.17, -.18], [.29, .09, .49], .11, .075), 'rust'],
+    [rod([-.08, -.12, -.17], [.07, .23, .51], .065, .045), 'oil'],
+    [topPlate([[-.58, -.18], [-.42, .48], [-.10, .61], [.12, .48], [.55, .42], [.61, -.14]], .09, .35), 'bone'],
+  ], metal);
+
+  const head = pivot(neck, 'head', [0, .05, .45]);
+  scrap(head, 'welded-jackal-skull', [
+    [box([1.18, .65, .78], [0, .03, .25], [.02, 0, 0]), 'oil'],
+    [topPlate([[-.57, -.10], [-.48, .55], [-.23, .76], [.05, .62], [.52, .58], [.62, .14], [.42, -.12]], .11, .40), 'bone'],
+    [plate([[-.58, .31], [-.28, .53], [.17, .48], [.57, .25], [.52, -.18], [.10, -.27], [-.48, -.20]], .11, .67), 'bone'],
+    [plate([[-.54, .25], [-.24, .46], [-.04, .15], [-.15, -.19], [-.49, -.17]], .07, .74), 'rust'],
+    [box([.86, .40, .93], [0, -.08, .92], [-.02, 0, 0]), 'rust'],
+    [topPlate([[-.39, -.22], [-.43, .66], [-.18, 1.28], [0, 1.55], [.28, 1.25], [.42, .54], [.34, -.18]], .09, .16), 'bone'],
+    [box([.55, .31, .48], [0, -.12, 1.47], [.02, 0, 0]), 'edge'],
+    [rod([-.43, .15, .48], [-.30, -.02, 1.64], .060, .032), 'iron'],
+    [rod([.43, .15, .48], [.30, -.02, 1.64], .060, .032), 'iron'],
+    [topPlate([[-.51, .21], [-.76, -.43], [-.62, -.84], [-.35, -.35], [-.19, .17]], .10, .49).rotateY(-.18), 'bone'],
+    [topPlate([[.17, .18], [.35, -.36], [.66, -.82], [.78, -.38], [.51, .23]], .10, .47).rotateY(.18), 'bone'],
+    [box([.17, .12, .18], [-.48, .23, .70], [0, 0, -.12]), 'rust'],
+    [box([.17, .12, .18], [.48, .23, .70], [0, 0, .12]), 'rust'],
+  ], metal);
+  const eye = soulPair(head, 'eye', [-.31, .10, .73], [.31, .10, .73], [.105, .080, .050], [4.8, .45, .08]);
+
+  const jaw = pivot(head, 'jaw', [0, -.20, .45]);
+  const jawPieces = [
+    [box([.82, .22, 1.28], [0, -.11, .64], [.06, 0, 0]), 'oil'],
+    [rod([-.39, .06, 0], [-.31, -.08, 1.28], .070, .035), 'rust'],
+    [rod([.39, .06, 0], [.31, -.08, 1.28], .070, .035), 'iron'],
+    [topPlate([[-.40, .02], [-.31, 1.26], [0, 1.43], [.31, 1.26], [.40, .02]], .08, -.02), 'rust'],
+  ];
+  for (let i = 0; i < 12; i++) {
+    const side = i % 2 ? 1 : -1;
+    const x = side * (.24 + (i % 4) * .025);
+    const z = .15 + Math.floor(i / 2) * .19;
+    const tooth = plate([[-.065, .02], [.065, .02], [.025, .24 + (i % 3) * .04]], .08, z);
+    tooth.translate(x, -.09, 0);
+    jawPieces.push([tooth, 'bone']);
   }
-  function arm(side, label) {
-    const shoulder = pivot(torso, `${label}-shoulder`, [side * .656, 1.28, 0]);
-    const elbow = pivot(shoulder, `${label}-elbow`, [side * .192, -.688, .024]);
-    const blade = pivot(elbow, `${label}-blade`, [side * .128, -.56, .072]);
-    joint(shoulder, `${label}-shoulder`, .22);
-    joint(elbow, `${label}-elbow`, .16);
-    scrap(shoulder, `${label}-upper-arm`, [
-      [rod([0, -.14, 0], [side * .192, -.60, .024], .062), 'iron'],
-      [rod([side * .12, -.20, -.09], [side * .25, -.55, -.07], .037, .028), 'rust'],
-      [box([.28, .09, .29], [side * .10, -.30, .015], [0, .12, side * .22]), 'rust'],
-    ], metal);
-    const shell = plate([[-.17, -.23], [.14, -.20], [.24, -.32], [.20, -.43],
-      [.05, -.48], [-.12, -.41]].map(([x, y]) => [side * x, y]), .30);
-    shell.rotateZ(side * .16).translate(side * .10, 0, 0);
-    scrap(shoulder, `${label}-chipped-upper-arm-shell`, [[shell, side < 0 ? 'concrete' : 'ash']], concrete);
-    scrap(elbow, `${label}-forearm`, [
-      [rod([0, -.10, 0], [side * .128, -.56, .072], .057, .045), 'iron'],
-      [rod([-side * .075, -.16, .08], [side * .04, -.43, .13], .026, .019), 'edge'],
-      [plate([[-.13, -.19], [.12, -.17], [.22, -.38], [.12, -.49], [-.10, -.42]], .18, -.015), 'rust'],
-      [box([.25, .065, .23], [side * .09, -.43, .04], [0, 0, side * .15]), 'iron'],
-    ], metal);
-    // Long salvaged shear blades preserve the warden's reach inside the 1.52 m radius.
-    const outline = [[-.12, .04], [.13, -.04], [.17, -.48], [.29, -.91], [.28, -1.08],
-      [.45, -1.48], [.46, -1.70], [.20, -1.39], [-.07, -.73], [-.14, -.21]];
-    const edge = [[.17, -.48], [.29, -.91], [.28, -1.08], [.45, -1.48], [.46, -1.70],
-      [.36, -1.45], [.19, -1.03], [.21, -.89], [.11, -.51]];
-    scrap(blade, `${label}-ruin-shear`, [
-      [plate(outline.map(([x, y]) => [side * x, y]), .075), 'rust'],
-      [plate(edge.map(([x, y]) => [side * x, y]), .082, .003), 'edge'],
-      [box([.28, .10, .14], [side * .015, -.17, .015], [0, 0, side * .13]), 'iron'],
-      [rod([side * .02, -.24, .065], [side * .12, -.74, .065], .032, .022), 'oil'],
-      [rod([side * .06, -.35, .075], [side * .06, -.35, .10], .039, .039, 6), 'edge'],
-    ], metal);
-    scrap(shoulder, `${label}-ash-arm-rag`, [
-      [rag(-side * .10, -.26, -.18, .18, side < 0 ? .40 : .30, -side * .04), 'ashCloth'],
-    ], cloth);
-    return { shoulder, elbow, blade };
-  }
-  function leg(side, label) {
-    const hip = pivot(pelvis, `${label}-hip`, [side * .32, 0, 0]);
-    const knee = pivot(hip, `${label}-knee`, [side * .072, -.704, .224]);
-    const ankle = pivot(knee, `${label}-ankle`, [side * .04, -.592, -.496]);
-    scrap(hip, `${label}-reinforced-thigh`, [
-      [rod([-.10, 0, 0], [.10, 0, 0], .12, .12, 8), 'oil'],
-      [rod([0, -.06, 0], [side * .072, -.704, .224], .065), 'iron'],
-      [rod([side * .11, -.11, -.06], [side * .15, -.53, .11], .055, .042), 'rust'],
-      [box([.27, .085, .28], [side * .055, -.30, .07], [.25, 0, side * .10]), 'iron'],
-    ], metal);
-    scrap(hip, `${label}-thigh-slab`, [
-      [plate([[-.13, -.18], [.13, -.14], [.17, -.34], [.07, -.56], [-.12, -.48]], .16, .16), 'ash'],
-    ], concrete);
-    scrap(knee, `${label}-reverse-shin`, [
-      [rod([-.13, 0, 0], [.13, 0, 0], .13, .13, 8), 'rust'],
-      [rod([0, -.05, -.04], [side * .04, -.592, -.496], .055), 'iron'],
-      [rod([-side * .09, -.07, -.03], [-side * .04, -.40, -.30], .05), 'oil'],
-      [rod([-side * .04, -.40, -.30], [-side * .03, -.58, -.48], .024), 'edge'],
-      [plate([[-.16, .08], [.14, .06], [.18, -.10], [.05, -.20], [-.12, -.14]], .09, .13), 'concrete'],
-    ], metal);
-    const foot = [
-      [rod([-.09, 0, 0], [.09, 0, 0], .09, .09, 6), 'iron'],
-      [rod([0, -.015, 0], [0, -.28, .16], .065, .045), 'rust'],
-      [box([.29, .09, .31], [0, -.29, .20], [.10, 0, side * .07]), 'iron'],
-    ];
-    for (const toe of [-1, 1]) {
-      foot.push([rod([toe * .06, -.27, .15], [toe * .13, -.34, .43], .042, .025), 'iron']);
-      const claw = plate([[-.09, -.30], [.15, -.384], [.12, -.27], [-.045, -.23]], .075);
-      claw.rotateY(Math.PI / 2).translate(toe * .13, 0, .40);
-      foot.push([claw, 'edge']);
+  scrap(jaw, 'hinged-scrap-jaw', jawPieces, metal);
+
+  // Four vertebra pivots let the tail curl tightly around the body for the roll.
+  const t0 = pivot(pelvis, 't0', [0, .05, -.75]);
+  const t1 = pivot(t0, 't1', [.08, -.02, -.76]);
+  const t2 = pivot(t1, 't2', [-.10, -.04, -.72]);
+  const t3 = pivot(t2, 't3', [.08, -.06, -.67]);
+  const tail = [t0, t1, t2, t3];
+  const tailLengths = [.78, .75, .70, .82];
+  for (let i = 0; i < tail.length; i++) {
+    const radius = .27 - i * .035;
+    const links = [];
+    for (let link = 0; link < 3; link++) {
+      const z = -.10 - link * tailLengths[i] * .28;
+      const rotation = link % 2 ? [Math.PI / 2, Math.PI / 2, 0] : [Math.PI / 2, 0, 0];
+      links.push([ring([0, .01, z], radius, radius * .24, rotation, 9), link % 2 ? 'iron' : 'rust']);
     }
-    scrap(ankle, `${label}-rubble-crushing-foot`, foot, metal);
-    return { hip, knee, ankle };
+    links.push([box([radius * 1.65, radius * .60, .19], [0, .04, -.26], [0, 0, i % 2 ? .20 : -.16]), 'edge']);
+    links.push([rod([-.11, .05, -.08], [.10, .04, -tailLengths[i] * .88], .030), 'rust']);
+    scrap(tail[i], `tail-${i}-heavy-chain`, links, metal);
   }
-  const armL = arm(-1, 'left'), armR = arm(1, 'right');
-  const legL = leg(-1, 'left'), legR = leg(1, 'right');
-  scrap(torso, 'ash-mantle', [
-    [rag(-.30, 1.19, -.43, .30, 1.10, -.10), 'ashCloth'],
-    [rag(.26, 1.18, -.42, .26, .84, .12), 'ashCloth'],
-    [rag(-.04, 1.10, -.45, .24, 1.30, .08), 'ash'],
+
+  function makeLeg(parent, side, index, hipPosition, kneePosition, anklePosition) {
+    const hip = pivot(parent, `hip${index}`, hipPosition);
+    const knee = pivot(hip, `knee${index}`, kneePosition);
+    const ankle = pivot(knee, `ankle${index}`, anklePosition);
+    const claw = pivot(ankle, `claw${index}`, [0, -.09, .08]);
+    addJoint(hip, `hip-${index}-bearing`, .25);
+    addJoint(knee, `knee-${index}-bearing`, .22);
+    addJoint(ankle, `ankle-${index}-bearing`, .17);
+    scrap(hip, `leg-${index}-splayed-thigh`, [
+      [rod([0, 0, 0], [kneePosition[0], kneePosition[1], kneePosition[2]], .24, .20, 8), 'iron'],
+      [rod([0, .13, -.08], [kneePosition[0] * .92, kneePosition[1] + .13, kneePosition[2] - .08], .085, .065), 'rust'],
+      [box([.58, .34, .70], [kneePosition[0] * .46, kneePosition[1] * .46, kneePosition[2] * .46], [.10, side * .20, side * .18]), index === 2 ? 'rust' : 'edge'],
+      [box([.46, .24, .50], [kneePosition[0] * .72, kneePosition[1] * .72 + .08, kneePosition[2] * .72], [-.08, side * .13, -side * .15]), 'bone'],
+      [rod([-side * .17, -.02, -.06], [kneePosition[0] - side * .16, kneePosition[1] + .06, kneePosition[2] - .04], .060, .045), 'oil'],
+    ], metal);
+    scrap(knee, `leg-${index}-piston-shin`, [
+      [rod([0, 0, 0], [anklePosition[0], anklePosition[1], anklePosition[2]], .20, .15, 8), 'rust'],
+      [rod([-side * .15, -.04, .01], [anklePosition[0] - side * .15, anklePosition[1] + .07, anklePosition[2]], .075, .050), 'oil'],
+      [box([.52, .30, .66], [anklePosition[0] * .48, anklePosition[1] * .46, anklePosition[2] * .48], [.14, -side * .18, side * .08]), 'iron'],
+      [plate([[-.27, .16], [.24, .12], [.29, -.34], [.05, -.62], [-.22, -.44]], .17, .05), 'bone'],
+    ], metal);
+    scrap(ankle, `leg-${index}-foot-yoke`, [
+      [box([.70, .30, .62], [0, -.09, .18], [.04, 0, side * .08]), 'oil'],
+      [topPlate([[-.35, -.10], [-.30, .49], [0, .64], [.34, .47], [.37, -.08]], .09, .10), 'bone'],
+      [rod([-.31, -.04, .12], [.31, -.04, .12], .080), 'rust'],
+    ], metal);
+    const clawPieces = [];
+    for (const toe of [-1, 0, 1]) {
+      const x = toe * .22;
+      clawPieces.push([rod([toe * .15, .03, 0], [x, -.06, .40], .070, .040), 'iron']);
+      clawPieces.push([clawBlade(x, .34, toe === 0 ? .88 : .76, .22, -toe * .16), 'bone']);
+    }
+    scrap(claw, `leg-${index}-blade-claws`, clawPieces, metal);
+    return { hip, knee, ankle, claw, side, index };
+  }
+
+  const legs = [
+    makeLeg(chest, -1, 0, [-.62, -.05, .05], [-.85, -.62, .12], [.12, -.62, .42]),
+    makeLeg(chest, 1, 1, [.62, -.05, .05], [.85, -.62, .12], [-.12, -.62, .42]),
+    makeLeg(pelvis, -1, 2, [-.62, -.02, .10], [-.82, -.48, .18], [.10, -.40, .35]),
+  ];
+
+  // The rear-right leg is grotesquely hypertrophied and hooked above the body.
+  // Its animation pivots remain the throwing-arm contract, but the visible shin,
+  // ankle and foot hang below the high knee instead of forming a smooth tail arc.
+  const shoulder = pivot(pelvis, 'shoulder', [.58, .30, -.20]);
+  const upper = pivot(shoulder, 'upper');
+  const elbow = pivot(upper, 'elbow', [.82, 2.70, .58]);
+  const fore = pivot(elbow, 'fore');
+  const wrist = pivot(fore, 'wrist', [-.60, 2.05, 1.62]);
+  addJoint(shoulder, 'arm-hip-drum', .42);
+  addJoint(elbow, 'arm-wrong-way-knee-drum', .38);
+  scrap(upper, 'twisted-overgrown-thigh', [
+    [rod([0, 0, 0], [.82, 2.70, .58], .40, .32, 9), 'iron'],
+    [rod([-.24, .03, -.16], [.55, 2.55, .37], .12, .085), 'oil'],
+    [rod([.24, .00, .14], [1.04, 2.46, .75], .11, .070), 'rust'],
+    [box([.82, .38, .84], [.24, .66, .12], [.35, -.10, -.24]), 'rust'],
+    [box([.92, .42, .78], [.52, 1.34, .30], [-.30, .14, .22]), 'bone'],
+    [box([.80, .36, .88], [.73, 2.03, .45], [.42, -.12, -.18]), 'edge'],
+    [ring([.30, .87, .17], .43, .10, [0, Math.PI / 2, .32], 10), 'rust'],
+    [ring([.50, 1.45, .31], .41, .095, [0, Math.PI / 2, -.38], 10), 'oil'],
+    [ring([.68, 2.05, .44], .37, .090, [0, Math.PI / 2, .46], 10), 'rust'],
+    [topPlate([[-.39, .34], [-.33, 1.16], [-.12, 1.52], [.22, 1.30], [.35, .42], [.16, .03]], .12, .46).rotateZ(-.30), 'bone'],
+  ], metal);
+  scrap(upper, 'torn-thigh-cables', [
+    [rag(.12, 1.72, -.24, .38, .88, .13), 'ashCloth'],
   ], cloth);
-  scrap(pelvis, 'ash-hip-rags', [
-    [rag(-.27, .06, .10, .25, .73, -.09), 'ashCloth'],
-    [rag(.28, .08, -.05, .21, .91, .10), 'ashCloth'],
-    [rag(0, .02, -.25, .29, .64, -.07), 'ash'],
-  ], cloth);
+  scrap(fore, 'hyperextended-hanging-shin', [
+    [rod([0, 0, 0], [-.38, -1.22, .66], .32, .26, 9), 'rust'],
+    [rod([.23, -.05, -.08], [-.14, -1.22, .55], .11, .075), 'oil'],
+    [rod([-.24, .02, .12], [-.66, -1.08, .78], .10, .060), 'iron'],
+    [box([.78, .40, .88], [-.17, -.48, .27], [-.32, .18, .14]), 'iron'],
+    [box([.72, .36, .76], [-.34, -.98, .57], [.28, -.16, -.20]), 'bone'],
+    [ring([-.39, -1.20, .66], .31, .085, [0, Math.PI / 2, -.30], 9), 'oil'],
+    [rod([-.18, -.35, .10], [-.60, 2.05, 1.62], .070, .045), 'rust'],
+    [rod([.12, -.18, -.04], [-.46, 1.82, 1.43], .045, .025), 'oil'],
+    [plate([[-.39, -.10], [.05, -.14], [-.04, -.78], [-.31, -1.35], [-.62, -1.14], [-.54, -.39]], .18, .25), 'rust'],
+  ], metal);
+  scrap(wrist, 'mangled-ankle-and-foot', [
+    [ring([0, -3.24, -1.50], .34, .10, [0, Math.PI / 2, 0], 10), 'oil'],
+    [box([.96, .42, .82], [0, -3.31, -1.34], [.06, 0, -.04]), 'rust'],
+    [topPlate([[-.46, -.20], [-.40, .60], [-.08, .82], [.42, .55], [.48, -.16]], .12, -3.05).translate(0, 0, -1.56), 'bone'],
+    [rod([-.42, -3.21, -1.48], [.42, -3.21, -1.48], .095), 'edge'],
+    [rod([-.30, -3.30, -1.22], [-.52, -2.65, -1.05], .055, .025), 'oil'],
+    [rod([.25, -3.34, -1.18], [.48, -2.82, -.96], .050, .020), 'rust'],
+  ], metal);
+
+  const fingers = [];
+  for (let i = 0; i < 3; i++) {
+    const x = (i - 1) * .31;
+    const finger = pivot(wrist, `finger${i}`, [x, -.22, .30 + (i === 1 ? .12 : 0)]);
+    const spread = (i - 1) * .18;
+    scrap(finger, `overgrown-foot-toe-${i}`, [
+      [rod([0, -3.02, -1.58], [spread, -3.48, -1.02], .13, .085, 8), i === 1 ? 'iron' : 'rust'],
+      [rod([spread, -3.48, -1.02], [spread * 1.35, -3.68, -.48], .10, .045, 8), 'edge'],
+      [plate([[-.14, -3.36], [.15, -3.42], [.17, -4.13], [.03, -4.34], [-.13, -4.02]], .16, -.57 + spread), 'bone'],
+    ], metal);
+    fingers.push(finger);
+  }
+  const grip = pivot(wrist, 'grip', [0, -.72, .20]);
+  const arm = { shoulder, upper, elbow, fore, wrist, fingers, grip };
+
   return {
-    root, radius: 1.52, height: 4.32,
-    parts: { pelvis, torso, head, eye, core, armL, armR, legL, legR },
+    root, radius: 2.4, height: 3.2,
+    parts: { pelvis, torso, chest, neck, head, jaw, eye, core, spine, tail, legs, arm },
   };
 }

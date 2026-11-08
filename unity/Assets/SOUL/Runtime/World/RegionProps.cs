@@ -220,27 +220,127 @@ namespace Soul
             float yaw = b.Range(-.5f, .5f) + Pi * .5f, rise = run * b.Range(.12f, .32f);
             RuinStructures.Flight(b, p, 0, 0, width, run, 0, rise, yaw);
             b.Push(); b.RotateY(yaw);
-            for (int i = 0; i < 6; i++)
-            {
-                float x = (i - 2.5f) * width / 7;
-                BentRod(b, V(x, rise - .12f, run * .5f - .12f),
-                    V(x, rise - .13f, run * .5f + .28f),
-                    V(x + .08f, rise - .3f, run * .5f + .48f), .028f, Rust);
-            }
-            RuinStructures.Detail(b, seed ^ 307, () =>
-            {
-                // Dark aggregate seams and pale chipped scars follow the slope.
-                for(int i=0;i<4;i++)
-                {
-                    float z=-run*.38f+i*run*.23f, y=rise*(z/run+.5f)+.018f;
-                    b.Beam(V(-width*.35f,y,z),V(width*.22f,y,z),.012f,.008f,3,C(0x4c4945));
-                }
-            });
+            RuinStructures.Detail(b, seed ^ 307, () => SlabDamage(b, width, run, rise));
             b.Pop();
             p.mesh = b.Build("concrete-slab");
             p.footprint = Mathf.Sqrt(run * run + width * width) * .5f + .5f;
-            p.height = rise;
+            p.height = rise + .6f;
             return p;
+        }
+
+        static void SlabDamage(MeshBuilder b, float width, float run, float rise)
+        {
+            float a = width * .5f, d = run * .5f;
+            float Y(float z) => rise * (z / run + .5f);
+
+            // A ground stain makes the void beneath the lifted half readable.
+            float shadowZ0 = run * .06f, shadowZ1 = d - .08f;
+            b.Quad(V(-a * .72f, .006f, shadowZ0), V(-a * .72f, .006f, shadowZ1),
+                V(a * .72f, .006f, shadowZ1), V(a * .72f, .006f, shadowZ0), C(Char));
+
+            // The torn high end is deeper and less even than Flight's structural lip.
+            int facePieces = 7;
+            for (int i = 0; i < facePieces; i++)
+            {
+                float x0 = -a + width * i / facePieces, x1 = -a + width * (i + 1f) / facePieces;
+                float top0 = rise + b.Range(-.025f, .11f), top1 = rise + b.Range(-.025f, .11f);
+                float bottom0 = Mathf.Max(.025f, rise - b.Range(.3f, .48f));
+                float bottom1 = Mathf.Max(.025f, rise - b.Range(.3f, .48f));
+                b.Quad(V(x0, bottom0, d - .006f), V(x1, bottom1, d - .006f),
+                    V(x1, top1, d - .006f), V(x0, top0, d - .006f),
+                    b.Jitter(i % 3 == 0 ? ConcreteDark : Concrete, .09f));
+                if (i == 1 || i == 5)
+                    b.Tri(V(x0, top0 + .003f, d - .012f), V(x1, top1 + .003f, d - .012f),
+                        V((x0 + x1) * .5f, rise - .12f, d - .018f), C(Char));
+            }
+
+            // Long slope-following cracks: wide enough to survive the gameplay camera.
+            int cracks = b.RangeInt(2, 4);
+            for (int i = 0; i < cracks; i++)
+            {
+                float z0 = -d + b.Range(.28f, .62f), z1 = d - b.Range(.42f, .75f);
+                float x0 = b.Range(-a * .65f, a * .65f), x1 = Mathf.Clamp(x0 + b.Range(-.55f, .55f), -a * .72f, a * .72f);
+                float xm = Mathf.Clamp((x0 + x1) * .5f + b.Range(-.32f, .32f), -a * .78f, a * .78f);
+                float zm = Mathf.Lerp(z0, z1, b.Range(.38f, .62f));
+                SlabCrack(b, V(x0, Y(z0), z0), V(xm, Y(zm), zm), b.Range(.025f, .048f));
+                SlabCrack(b, V(xm, Y(zm), zm), V(x1, Y(z1), z1), b.Range(.018f, .04f));
+                if (i == 0)
+                {
+                    float bx = Mathf.Clamp(xm + b.Range(-.45f, .45f), -a * .8f, a * .8f);
+                    float bz = zm + run * b.Range(.06f, .13f);
+                    SlabCrack(b, V(xm, Y(zm), zm), V(bx, Y(bz), bz), .018f);
+                }
+            }
+
+            // One soot/dust wash and dark edge bites break up the otherwise continuous top.
+            float bandZ = b.Range(-run * .2f, run * .12f), bandD = b.Range(.18f, .36f);
+            b.Quad(V(-a * .9f, Y(bandZ - bandD) + .004f, bandZ - bandD),
+                V(-a * .9f, Y(bandZ + bandD) + .004f, bandZ + bandD),
+                V(a * .9f, Y(bandZ + bandD) + .004f, bandZ + bandD),
+                V(a * .9f, Y(bandZ - bandD) + .004f, bandZ - bandD), C(ConcreteDark));
+            int bites = b.RangeInt(1, 3);
+            for (int i = 0; i < bites; i++)
+            {
+                int side = i == 0 ? -1 : 1;
+                float z = b.Range(-d * .55f, d * .45f), length = b.Range(.35f, .72f), bite = b.Range(.12f, .24f);
+                Vector3 p0 = V(side * a, Y(z - length) + .009f, z - length);
+                Vector3 p1 = V(side * (a - bite), Y(z) + .009f, z);
+                Vector3 p2 = V(side * a, Y(z + length) + .009f, z + length);
+                if (side > 0) b.Tri(p0, p1, p2, C(Char)); else b.Tri(p0, p2, p1, C(Char));
+            }
+            b.Tri(V(-a, Y(-d) + .01f, -d), V(-a, Y(-d + .42f) + .01f, -d + .42f),
+                V(-a + .34f, Y(-d) + .01f, -d), C(Char));
+            b.Tri(V(a, Y(d) + .01f, d), V(a, Y(d - .38f) + .01f, d - .38f),
+                V(a - .3f, Y(d) + .01f, d), C(Char));
+
+            // Crushed bearing rubble stays inside the registered ramp footprint.
+            SlabRubble(b, -d + .35f, Y(-d + .35f), width, 5, false);
+            SlabRubble(b, d - .42f, 0, width, 8, true);
+            SlabBearing(b, d - .72f, width, Mathf.Max(.09f, rise - .22f));
+
+            // Thick rods curl back over the slab, keeping the whole bundle in footprint.
+            int rods = b.RangeInt(5, 8);
+            for (int i = 0; i < rods; i++)
+            {
+                float x = Mathf.Lerp(-a * .72f, a * .72f, (i + .5f) / rods) + b.Range(-.07f, .07f);
+                float gauge = b.Range(.05f, .07f);
+                Vector3 root = V(x, rise - b.Range(.12f, .25f), d - .08f);
+                Vector3 bend = V(Mathf.Clamp(x + b.Range(-.1f, .1f), -a + .08f, a - .08f),
+                    rise + b.Range(.16f, .34f), d - b.Range(.12f, .2f));
+                Vector3 end = V(Mathf.Clamp(x + b.Range(-.24f, .24f), -a + .08f, a - .08f),
+                    rise + b.Range(.22f, .5f), d - b.Range(.3f, .52f));
+                BentRod(b, root, bend, end, gauge, i % 3 == 0 ? Scrap : Rust);
+            }
+        }
+
+        static void SlabCrack(MeshBuilder b, Vector3 start, Vector3 end, float width)
+        {
+            Vector3 side = Vector3.Cross(end - start, Vector3.up).normalized * width * .5f;
+            start.y += .008f; end.y += .008f;
+            b.Quad(start - side, start + side, end + side, end - side, C(Char));
+        }
+
+        static void SlabRubble(MeshBuilder b, float z, float floor, float width, int count, bool highEnd)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                float r = b.Range(.07f, highEnd ? .2f : .14f);
+                float px = b.Range(-width * .38f, width * .38f), pz = z + b.Range(-.1f, .1f);
+                float py = floor + r * (highEnd ? .35f : .22f);
+                b.Rock(V(px, py, pz), r, b.Jitter(i % 5 == 0 ? ConcreteDark : Concrete), .35f, highEnd ? .65f : .42f, 0);
+            }
+        }
+
+        static void SlabBearing(MeshBuilder b, float z, float width, float underside)
+        {
+            float baseRadius = Mathf.Clamp(underside * .35f, .22f, Mathf.Min(.55f, width * .28f));
+            for (int i = 0; i < 3; i++)
+            {
+                float r = baseRadius * b.Range(.85f, 1.05f), squash = underside * .42f / r;
+                float x = (i - 1) * width * .18f + b.Range(-.06f, .06f);
+                b.Rock(V(x, underside * .46f, z + b.Range(-.08f, .08f)), r,
+                    b.Jitter(i == 1 ? ConcreteDark : Concrete), .22f, squash, 0);
+            }
         }
 
         public static PropModel RubblePile(int seed)

@@ -71,12 +71,13 @@ namespace Soul
                 onPlayerHit = OnPlayerHit,
                 onImpact = (e, a, p) =>
                 {
-                    if (a.name == "slam" || a.name == "quake") { float k = a.radius / 2.5f; vfx.Ring(Sim.FlatY(p, .03f), 1.7f * k); vfx.Dust(p, 1.8f * k); vfx.Burst(Sim.FlatY(p, .2f), (int)(14 * k), k); }
-                    else if (a.name == "lunge") vfx.Dust(e.pos, .9f);
+                    if (a.name == "slam" || a.name == "quake" || a.name == "throw") { float k = a.radius / 2.5f; vfx.Ring(Sim.FlatY(p, .03f), 1.7f * k); vfx.Dust(p, 1.8f * k); vfx.Burst(Sim.FlatY(p, .2f), (int)(14 * k), k); }
+                    else if (a.name == "lunge" || a.name == "roll" || a.name == "claw") vfx.Dust(e.pos, a.name == "roll" ? 1.8f : .9f);
                     else vfx.Dust(p, .7f);
                     if (Vector3.Distance(p, ch.root.position) < 8) cam.Shake(a.name == "slam" ? .1f : .04f);
                 },
                 onKill = e => kills++,
+                onStep = (p, s) => { vfx.Dust(p, .8f * s); if (Vector3.Distance(p, ch.root.position) < 18) cam.Shake(.02f * s); },   // heavy footfalls (boss)
             };
             breakables = new Breakables(scene.breakables, vfx, 12, BOUNDS - 1);
             ash = new Ash(scene.driftingAsh);
@@ -123,9 +124,10 @@ namespace Soul
         {
             string n = anim.name; if (!AREA.TryGetValue(n, out var area)) return;
             var f = ch.Forward; bool heavy = Heavy(n);
+            PillarArea(area.r, area.a);
             foreach (var e in enemies.list)
             {
-                if (!e.alive || e.state == "spawn" || Mathf.Abs(e.pos.y - ch.root.position.y) > 1.6f) continue;   // not through floors
+                if (!e.Hittable ||Mathf.Abs(e.pos.y - ch.root.position.y) > 1.6f) continue;   // not through floors
                 var d = Sim.FlatY(e.pos - ch.root.position); float dist = d.magnitude - e.radius * .7f;
                 if (dist > area.r) continue;
                 if (area.a > 0 && dist > .6f && Vector3.Dot(d.normalized, f) < Mathf.Cos(area.a / 2)) continue;
@@ -143,7 +145,7 @@ namespace Soul
             bool heavy = Heavy(n);
             foreach (var (p, q) in segs)
             {
-                breakables.Hit(p, q, BREAK_REACH, ch.root.position);
+                breakables.Hit(p, q, BREAK_REACH, ch.root.position); PillarBlade(p, q);
                 foreach (var h in enemies.HitsAlong(p, q, BLADE_REACH))
                 {
                     if (!CanHit(h.e, m)) continue;
@@ -294,14 +296,14 @@ namespace Soul
             anim.Update(step, RopeHolds ? Vector3.zero : input, true);
             if (RopeTravel) RopeMove(step, before); else Vertical(step, before);
             RopeTick(step); RopeArmPose();
-            if (anim.name != lastName) { previousTip = null; lastName = anim.name; hitSet.Clear(); }
+            if (anim.name != lastName) { previousTip = null; lastName = anim.name; hitSet.Clear(); pillarHitSet.Clear(); }
             var m = anim.move; bool active = m?.active != null && anim.time >= m.active[0] && anim.time <= m.active[1];
             if (active && !m.parry) { BladeHits(m); if (anim.time >= (m.Has(m.impact) ? m.impact : m.active[0]) - .02f) AreaHits(m); } else if (!active) previousTip = null;
             foreach (var w in vfx.waves)
             {
-                var c = w.pos;
+                var c = w.pos; PillarWave(w);
                 foreach (var e in enemies.list)
-                    if (e.alive && !w.hitSet.Contains(e) && Mathf.Abs(e.pos.y - c.y + .35f) < 1.8f && Mathf.Sqrt((c.x - e.pos.x) * (c.x - e.pos.x) + (c.z - e.pos.z) * (c.z - e.pos.z)) < WAVE_R + e.radius * .5f)
+                    if (e.Hittable &&!w.hitSet.Contains(e) && Mathf.Abs(e.pos.y - c.y + .35f) < 1.8f && Mathf.Sqrt((c.x - e.pos.x) * (c.x - e.pos.x) + (c.z - e.pos.z) * (c.z - e.pos.z)) < WAVE_R + e.radius * .5f)
                     { w.hitSet.Add(e); e.Damage(30, ch.root.position, true); vfx.Burst(e.Center(), 24, 1.2f); cam.Shake(.06f); }
                 breakables.Hit(Sim.FlatY(c, .2f), Sim.FlatY(c, 1.2f), .9f, c);
             }
@@ -323,7 +325,7 @@ namespace Soul
             string n = anim.name;
             string state = n == "hit" || n == "stagger" ? "hurt" : n == "heavyCharge" ? "wide" : anim.busy && n != "jump" ? "focus" : "idle";
             face.Update(realDt, state);
-            open.Update(ch.root.position); atmo.Update(realDt, ch.root.position); ZoneUpdate(realDt);
+            open.Update(ch.root.position); VistaUpdate(realDt); GrudgeUpdate(realDt); atmo.Update(realDt, ch.root.position); ZoneUpdate(realDt);
             // top-down cutaway: dither out world geometry above head height between the camera and the player
             Shader.SetGlobalVector("_SoulCutCenter", (Vector4)Sim.ToUnity(ch.root.position + Sim.ApplyAxisAngle(new Vector3(0, 0, 3), Vector3.up, cam.yaw)) + new Vector4(0, 0, 0, 9.5f));
             Shader.SetGlobalVector("_SoulCutParams", new Vector4(2.3f, 2.5f, 0, 0));
@@ -469,7 +471,7 @@ namespace Soul
                 GUI.color = Color.white; GUI.Label(new Rect(0, H * .68f + 28, W, 20), to, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             }
             if (debugHud) GUI.Label(new Rect(20, 102, 500, 20), $"파츠: {Parts.Owned()}   ·   M 지도 · Shift+1~6 파츠 토글 · F1 디버그 표시", small);
-            ZoneGUI(W, H); RopeGUI();
+            ZoneGUI(W, H); RopeGUI(); GrudgeGUI(W, H);
             if (showMap) DrawMap();
         }
 

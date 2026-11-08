@@ -6,12 +6,15 @@ namespace Soul
     // positions"). Every pixel takes its zone's painted swatch from UI/map_terrain.png (3 x 3: 8 zones +
     // mountains, tiled at world scale) and adds relief shading, ink coastlines, dashed trails and water.
     // Built progressively (rows per frame) the first time the map opens; falls back to ZoneWorld.MapTexture.
+    // UI/map_world.png (user 2026-11-07), when present, replaces all of that: one illustrated sheet painted over the exact
+    // layout export (unity/tools/map_base.cs -> Captures/map_base.png, same MapUV framing, image top = MinZ) and re-inked
+    // with the layout masks (tools/map_compose.py) so ridges, water and trails sit on the real terrain.
     // Landmark / pod / shrine / boss pictograms come from UI/map_icons.png (4 x 4, see Icon* constants).
     public static class MapPainter
     {
         public const int W = 640;
         public static int H => Mathf.RoundToInt(W * (ZoneWorld.MaxZ - ZoneWorld.MinZ) / (ZoneWorld.MaxX - ZoneWorld.MinX));
-        static Texture2D tex, swatch, icons; static Color[] px; static int row = -1; static bool tried;
+        static Texture2D tex, swatch, icons, world; static Color[] px; static int row = -1; static bool tried;
         const float TILE = 280;   // metres per swatch repeat
 
         // map icon sheet indices (UI/map_icons.png, row-major from the top-left)
@@ -28,8 +31,9 @@ namespace Soul
         static bool Load()
         {
             if (tried) return swatch; tried = true;
+            world = Resources.Load<Texture2D>("UI/map_world");
             swatch = Resources.Load<Texture2D>("UI/map_terrain"); icons = Resources.Load<Texture2D>("UI/map_icons");
-            return swatch && swatch.isReadable;
+            return world || swatch && swatch.isReadable;
         }
         public static bool HasIcons { get { Load(); return icons; } }
         public static bool Icon(Rect r, int i)
@@ -74,6 +78,7 @@ namespace Soul
         public static Texture2D Texture()
         {
             if (!Load()) return null;
+            if (world) return world;
             int h = H;
             if (!tex) { tex = new Texture2D(W, h, TextureFormat.RGB24, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp }; px = new Color[W * h]; row = 0; }
             if (row >= 0 && row < h)
@@ -89,6 +94,6 @@ namespace Soul
             }
             return row >= h ? tex : null;
         }
-        public static float Progress => row < 0 ? 0 : row / (float)H;
+        public static float Progress => world ? 1 : row < 0 ? 0 : row / (float)H;
     }
 }

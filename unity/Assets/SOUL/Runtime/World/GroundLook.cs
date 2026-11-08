@@ -122,5 +122,34 @@ namespace Soul
             if (healed) c = Color.Lerp(c, Moss, Sim.SmoothStep(P(x, z, .12f, 9.9f) + .3f * P(x, z, .5f, 2.2f), .55f, .95f) * .45f);
             c.a = 1; return c;
         }
+
+        // ---------- relief readability (지형 고저차 읽힘) ----------
+        // exposed rock per zone: base tone of cliff faces (strata bands are cut into it by height)
+        static readonly Color[] Rock = { H(0x6d6862), H(0x5d5b5e), H(0x5f5a6b), H(0x7a4a33), H(0x3a302a), H(0x4e3d2c), H(0x2f3324), H(0x8d9294) };
+        /// cliff face colour at height y: three-tone strata bands with dark seams (wavy so they read as beds)
+        public static Color Cliff(int zone, float x, float y, float z)
+        {
+            var b = Rock[Mathf.Clamp(zone, 0, Rock.Length - 1)];
+            float band = zone == 7 ? .9f : zone == 3 ? .45f : .6f;            // lab retaining walls: wide concrete courses
+            float t = y / band + .8f * P(x, z, .08f, 3.3f), fr = t - Mathf.Floor(t);
+            int k = Mathf.FloorToInt(t) % 3; if (k < 0) k += 3;
+            var c = b * (k == 0 ? .78f : k == 1 ? 1f : 1.18f);
+            c = Color.Lerp(c, Soot, (1 - Sim.SmoothStep(Mathf.Min(fr, 1 - fr), .03f, .12f)) * .55f);
+            c *= .9f + .2f * P(x, z, .6f, 7.1f);
+            c.a = 1; return c;
+        }
+        /// shade ground by its shape (multiplied over the zone colour from Regions.GroundColor):
+        /// slopes darken, cliff faces turn to banded rock, cliff feet / hollows darken, lips catch light.
+        /// grade = rise / run, hollow = mean height 2 m around minus height (> 0 foot / hollow, < 0 lip / crest)
+        public static Color Relief(Color c, int zone, float x, float y, float z, float grade, float hollow)
+        {
+            c *= 1 + Mathf.Clamp(y, -10, 10) * .028f;                         // height tint: high shelves lighter, pits darker
+            c *= Mathf.Lerp(1, .62f, Sim.SmoothStep(grade, .2f, 1f));
+            float rock = Sim.SmoothStep(grade, .6f, 1.3f);
+            if (rock > 0) c = Color.Lerp(c, Cliff(zone, x, y, z), rock);
+            c *= 1 - .45f * Sim.SmoothStep(hollow, .05f, .8f);                // cliff foot / pit floor in shade
+            c *= 1 + .3f * Sim.SmoothStep(-hollow, .05f, .6f) * (1 - rock * .6f);   // lip catches the light
+            c.a = 1; return c;
+        }
     }
 }

@@ -132,6 +132,14 @@ namespace Soul
             float tw = ZoneRoutes.TrailWeight(x, z);
             if (tw > 0) c = Color.Lerp(c, ZoneRoutes.TrailColor(self), tw * (ZoneState.Purified(self) ? .55f : .8f));
             float k = .93f + .14f * Mathf.PerlinNoise(x * .9f + 7, z * .9f + 2);
+            // soaked bank around water and the darker bed under it, so the shore line reads from above
+            float wet = Terrain.Wet(x, z);
+            if (wet > 0)
+            {
+                float under = Terrain.Water(x, z, out _);
+                k *= 1 - .38f * wet - .25f * Mathf.Clamp01(under / .3f);
+                c = Color.Lerp(c, new Color(c.r * .85f, c.g * .95f, c.b * .8f), wet);
+            }
             return new Color(c.r * k, c.g * k, c.b * k, 1);
         }
     }

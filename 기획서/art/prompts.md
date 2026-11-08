@@ -22,3 +22,9 @@
 공통 스타일 문구: `clean low-poly 3D made of simple geometric primitives (boxes, cylinders, spheres, flat-shaded) … cute and minimal, NOT photoreal, no text`, 팔레트 `ash grey, rust orange, charcoal, cyan accents`.
 
 캐릭터 고정 문구: `ragged hooded sand-colored desert robe, right side torn exposing a slim dark mechanical right arm whose forearm IS a long straight blade (no hand), black face screen with cyan pixel LED face 0_0`.
+
+## Z0 보스 기획서 (2026-11-07)
+
+| 파일 | 슬라이드 | 요지 |
+|---|---|---|
+| `boss_scrapbeast.png` | Z0 보스 기획서 표지 · 02 외형 | 같은 대화에서 생성. 탑뷰 55° 원형 콘크리트 투기장, 개과 머리 · 도마뱀 몸 · 사슬 꼬리 · 등 위로 아치를 그린 거대 팔과 3손가락 집게, 가슴의 파란 코어, 파랗게 빛나는 기둥, 크기 비교용 작은 후드 로봇. 다리 수(그림은 4개처럼 보임)와 기둥 수는 기획과 다름 |
