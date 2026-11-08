@@ -1,0 +1,10 @@
+var g = UnityEngine.Object.FindFirstObjectByType<Soul.SoulGame>();
+g.GrudgeTick(0); g.VistaTick(0);
+g.Teleport(new UnityEngine.Vector3(-300, 0, 40)); g.Simulate(.1f);
+g.GrantSkill("overload"); g.SkillCast("overload"); g.SkillsTickForTest(.6f); g.VistaTick(.05f);
+var cam = UnityEngine.Camera.main; var rt = new UnityEngine.RenderTexture(1600, 900, 24);
+cam.targetTexture = rt; cam.Render(); cam.targetTexture = null; UnityEngine.RenderTexture.active = rt;
+var tex = new UnityEngine.Texture2D(1600, 900, UnityEngine.TextureFormat.RGB24, false); tex.ReadPixels(new UnityEngine.Rect(0, 0, 1600, 900), 0, 0); tex.Apply(); UnityEngine.RenderTexture.active = null;
+System.IO.File.WriteAllBytes(System.IO.Path.Combine(UnityEngine.Application.dataPath, "../Captures/skill_overload_aura.png"), tex.EncodeToPNG());
+UnityEngine.Object.Destroy(tex); rt.Release(); Soul.Skills.Reset();
+return "ok";

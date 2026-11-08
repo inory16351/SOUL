@@ -424,10 +424,58 @@
 - 디버그: Shift+7로 Z0 파츠를 드롭합니다. F1 화면에 장착 수와 루트가 보입니다.
 - 검증(`tools/grudge.cs`): 줍기, 14분 시점 미완료 → 15분 완료와 +60, 장착 1~7개에 따른 단계와 루트, 같은 존 중복 장착 방지가 모두 통과했습니다.
 - 남은 것
-  - 장착 능력(Z0 고철 집어 던지기)은 플레이어 스킬과 모션이 아직 없습니다.
+  - 장착 능력(Z0 뒤틀린 에너지 코어 → '코어 과부하': 최대 체력 % 회복 + 이속 증가, 붉은 오라, 받는 피해 증가)은 아직 구현하지 않았습니다. 정화 연출에서 원혼이 응축되는 곳은 다리 무릎에서 금 간 코어로 바꿨습니다(`BossPurify.cs`).
   - Z1~Z7 파츠 이름과 능력이 정해지지 않았습니다.
   - 엔딩 4루트 시나리오가 없습니다.
   - 파츠 모델은 임시입니다.
+
+**스킬 = 파츠 (2026-11-08, 메인 세션)**: 규칙은 `../기획_결정사항.md`의 '스킬 = 파츠' 절에 있습니다.
+- 파일: `World/Skills.cs`(정의, 보유, 키, 레벨, 강화 비용, 레벨별 추가 효과 표 `Perks`), `Game/SoulGame.Skills.cs`(키 지정 안내, 시전, 배율 함수, 코어 과부하, 오라, 스킬 바). Tab 화면은 아래 '성장 노드 트리'의 `SoulGame.Growth.cs`로 옮겼습니다.
+- 시작할 때는 A 평타, Space 대쉬, F 점프만 있습니다. Q/W/E/R 고정 입력은 없앴습니다.
+  - 기존 모션 코드는 `Skill(KeyCode)` 그대로 두고, 스킬마다 `legacy` 키로 호출합니다.
+  - 테스트용 `Do("Q")`는 소유 여부와 상관없이 동작합니다.
+- 스킬 획득: `GrantSkill(id)`를 부르면 "사용할 키를 누르세요" 안내가 뜨고, 다음에 누른 키가 그 스킬의 키가 됩니다.
+  - 예약 키(A, Space, F, M, G, T, V, C, P, H, K, Tab, 숫자, F키, 마우스)는 쓸 수 없습니다.
+  - Esc를 누르면 키를 비워 둡니다. 이미 다른 스킬이 쓰는 키를 고르면, 그 스킬의 키는 비워집니다.
+- 획득처(초안)
+  - 공명 기둥(`Skills.ShrineSkill`): Z0 반격, Z1 회오리, Z2 레이저 파동, Z3 칼날 폭풍
+  - 원혼 파츠 장착(`Skills.GrudgeSkill`): Z0 코어 과부하
+  - F2(디버그): 기본 4개를 Q W E R로 획득
+- 레벨(2026-11-08 변경): **지갑의 기본 부품을 소비**해서 올립니다(Lv2 30, Lv3 60, Lv4 100, Lv5 150, `Skills.UPGRADE_COST`). Tab 성장 화면의 '스킬 파츠' 탭에서 강화합니다(최대 5). 포인트는 노드 트리에만 씁니다.
+  - 레벨당 피해 +12%, 쿨다운 −8%(`SkillDamageScale`가 AREA와 블레이드 판정에 곱해짐)
+  - 레벨별 추가 효과(`Skills.Perks`): 회오리 Lv3 범위 +20% / Lv5 피해 +15%, 칼날 폭풍 Lv3 범위 +20% / Lv5 쿨다운 −1.5초, 레이저 파동 Lv3 쿨다운 −0.5초 / Lv5 피해 +20%, 반격 Lv3 판정 +0.05초 / Lv5 피해 +25%, 코어 과부하 Lv3 지속 +2초 / Lv5 초당 회복 +1%
+  - 레이저 파동의 파동 자체 피해는 아직 레벨 영향을 받지 않습니다.
+- 코어 과부하: 8초(+레벨당 0.5초) 동안 초당 최대 체력의 4%를 회복합니다. 이동 속도 ×1.3(`anim.speedScale`), 받는 피해 ×1.5(`OnPlayerHit`)이고, 붉은 오라(가산 블렌드 원통 + 바닥 링, 맥동)가 나타납니다. 쿨다운은 45초입니다.
+- 게임 안 텍스트에는 '원혼/원한'을 쓰지 않습니다. 붉은 부품 화면 제목은 '붉게 빛나는 부품'입니다(F1 디버그 표시만 예외).
+- 검증(`tools/skills.cs`, 아래 성장 노드 트리 검증과 같은 파일): 시작 0개, 획득, 키 지정, 시전 시 모션, 지갑 100 → Lv2(70) → Lv3(10) → Lv4 거부, 레벨 3 피해 ×1.24 / 쿨다운 ×0.84 / 회오리 범위 4.0 → 4.8, 키 중복 시 이동, 과부하 8초와 회복량이 모두 통과했습니다. 캡처: `Captures/skill_overload_aura.png`
+- 남은 것: 키 설정 화면 정식 UI(지금은 IMGUI), 패드, 스킬 아이콘(코어 과부하는 CORE 아이콘 임시), 파츠별 스킬 목록 확정, 로프 팔은 좌클릭 그대로
+
+**성장 노드 트리 · 스킬 파츠 강화 (2026-11-08, 세션 growth-tree)**: 규칙과 노드 표(초안)는 `../기획_결정사항.md`의 '성장 노드 트리'에 있습니다.
+- 파일
+  - `World/GrowthTree.cs`: `Growth` 정적 클래스입니다. 노드 표 `Nodes` 하나만 고치면 됩니다(id, 가지, 이름, 설명, 효과 `GStat`과 값, 비용 포인트, 위치, 필요 파츠, 선행 노드). 위치는 `growth_tree_bg.png`의 소켓 중심 픽셀(1672×941, 왼쪽 위 원점)입니다. 소켓 38개 중 36개를 씁니다. 경험치 `xp`, 연 노드 `open`, 포인트 곡선, 모든 배율 함수(`DamageScale(move)`, `SpeedScale`, `DashCdScale`, `MaxHp` 등)가 여기 있습니다.
+  - `Game/SoulGame.Growth.cs`: Tab 성장 화면(IMGUI, 탭 '노드 트리' / '스킬 파츠'), `GainScrap`, 매 프레임 효과 적용(`GrowthApply`), 머리 가지 HUD(적 HP 수치, 공명 기둥 방향), MCP 테스트 함수가 있습니다.
+- 경험치와 지갑: 기본 부품을 주울 때(`Pickups.onCollect`)와 포드 정화 보상(+60) 때 `GainScrap(n)`이 지갑 `scrap`과 `Growth.xp`를 함께 올립니다. `xp`는 줄지 않고, 스킬 강화는 `scrap`만 씁니다.
+- 포인트 = `Growth.Earned(xp)` − 노드에 쓴 포인트입니다. 누적 경험치 20, 43, 69, 98, 130…(+3씩)마다 1포인트입니다(`Growth.Threshold`). 노드는 36개이고, 전부 여는 데 81포인트(경험치 약 11,900)가 듭니다.
+- 가지마다 첫 노드(강화 프레임 I, 날 연마 I, 반격 감각 I, 구동 모터 I, 광역 스캐너 I)는 선행 노드가 없고 몸의 뿌리 점(`Growth.Roots`: 가슴 보석, 칼날 손목, 케이블 손목, 다리, 머리)에서 선이 이어집니다. 배경 그림의 회로선과 맞추려고 코어 가지는 가슴 오른쪽 위, 오른팔(칼날)은 화면 왼쪽, 왼팔은 화면 오른쪽 아래, 다리는 아래, 머리는 위에 놓았습니다.
+- 노드 상태는 잠김(선행 노드나 파츠 없음), 열 수 있음, 열림 세 가지입니다. 필요 파츠는 `Parts.Has`로 확인합니다(내오염 코어, 캐논 포, 로프 팔, 자석 다리, 제트엔진).
+- 효과 연결(다른 파일은 한 줄씩만 고침)
+  - 피해: `SkillDamageScale(move)` = 스킬 레벨 × `Growth.DamageScale(move)`. 평타(light1~3), 3타, 반격, 스킬, 전체 피해가 여기서 곱해집니다.
+  - 이동 속도: `OverloadSpeed` = 코어 과부하 × `Growth.SpeedScale` (`SoulGame.Zone` WaterStep의 `anim.speedScale`)
+  - 받는 피해: `OverloadTaken` = 코어 과부하(출력 안정화 노드로 +50% → +25%) × 충격 흡수판 (`OnPlayerHit`)
+  - 최대 체력: `GrowthApply`가 `player.max = 100 + 노드 합`으로 맞추고, 늘어난 만큼 현재 체력도 올립니다.
+  - 평타 범위와 회오리/칼날 폭풍 범위 추가 효과: `GrowthApply`가 `AREA` 표를 처음 값 기준으로 다시 계산합니다. 대쉬 쿨다운도 `COOLDOWN[Space]`를 같은 방식으로 계산합니다.
+  - 반격 판정: `SoulGame.cs` `OnPlayerHit`의 `.27f + CounterWindowBonus`
+  - 로프 사거리: `SoulGame.Rope.cs`의 `RopeRange`(대상 잡기와 빗나감 거리). 턱 찾기(`RopeAnchors.FindEdge`) 안쪽의 14m 제한은 그대로입니다.
+  - 지도 공개 반경: 0.25초마다 `MapFog.Reveal(p, 46 × 배율)`을 한 번 더 부릅니다. 포드 신호 감지는 40m 안의 포드를 발견 처리합니다.
+- 성장 화면: 성장 화면 키(기본 Tab, `KeyBinds.Act.Growth`, 설정 창에서 변경 가능)로 열고 같은 키나 Esc로 닫습니다. 열려 있는 동안 `paused`를 켜고(닫을 때 원래 값으로 되돌림) `SkillInput`이 모든 입력을 먹으므로, 클릭이 로프로 새지 않습니다. 1/Q, 2/E로 탭을 바꿉니다. 설정 창(`SoulGame.Settings.cs`)을 열면 성장 화면은 닫히고, 성장 화면이 열려 있을 때 Esc는 설정 창 대신 성장 화면을 닫습니다.
+  - 노드 트리: 가운데가 코어, 오른쪽이 오른팔, 왼쪽이 왼팔, 아래가 다리, 위가 머리입니다. 마우스를 올리면 오른쪽 패널에 설명과 막힌 이유가 나오고, 클릭하면 엽니다. 패널 아래에는 지금 능력치(최대 체력, 평타 배율, 속도, 대쉬 쿨다운 등)가 나옵니다.
+  - 스킬 파츠: 보유 스킬, 레벨, 키, 피해 배율과 쿨다운, 추가 효과(열린 것은 초록), 강화 버튼(비용 부품)이 있습니다. 키 변경은 설정 창에서 합니다.
+  - UI 아트(`Resources/UI/ui_atlas.md`의 좌표): `growth_tree_bg.png`(배경, 노드가 소켓에 들어감), `ui_nodes.png`(가지 5 × 상태 3), `ui_panel.png`(9-slice 창, 탭, 버튼; 설명 카드와 오른쪽 패널도 같은 창 테두리를 작게 씀), `ui_skill_icons.png`(4×2, `Skills.Defs` 순서). 파일이 없으면 평면 그래픽으로 그립니다.
+  - 주의: 임포터가 텍스처 크기를 바꿉니다(`ui_nodes` 1254 → 1024, NPOT → 2의 거듭제곱). 그래서 UV는 `Texture2D.width`가 아니라 원본 크기 상수(`SZ_NODES`, `SZ_PANEL`, `SZ_ICONS`)로 계산합니다.
+  - 글꼴: `Resources/UI/Fonts/ui_font`(ttf/otf)가 있으면 그것을 쓰고, 없으면 Unity 기본 글꼴을 씁니다. `Font.CreateDynamicFontFromOSFont`는 IMGUI에서 모든 라벨이 같은 문자열로 그려지는 문제가 있어 쓰지 않습니다. 출시용으로는 OFL 라이선스 한국어 글꼴(예: Pretendard, Noto Sans KR)을 넣어야 합니다.
+  - 설명 카드(마우스를 올린 노드)와 오른쪽 패널은 `ui_panel` 창 테두리를 작게 9-slice한 카드(`Card`)입니다. 카드에는 가지 노드 그림, 비용 칩, 효과, 상태가 들어가고, 패널에는 다음 포인트까지 막대와 능력치 아이콘 줄이 있습니다.
+- 검증(`tools/skills.cs`, 플레이 모드): 경험치 50 → 포인트 2 · 지갑 50, 날 연마 I 전에 날 연마 II 거부, 강화 프레임 I → 최대 체력 110, 날 연마 I → 평타 ×1.08, 포인트 0에서 거부, 내오염 코어 없이 내오염 순환기 거부 → 파츠 획득 후 열림(최대 체력 135), 이동 속도 ×1.05, 대쉬 쿨다운 1.10 → 0.99, 평타 ×1.18 / 3타 ×1.475, 평타 범위 3.6 → 4.03, 반격 판정 끝 0.27 → 0.33, 받는 피해 ×0.92, 스킬 강화 뒤에도 경험치 2050 그대로, 복원 뒤 최대 체력 100. 캡처: `Captures/growth_tree.png`, `Captures/growth_parts.png`
+- 남은 것: 수치 조정(기본 부품 드롭량과 포인트 곡선), 노드 아이콘, 노드를 열 때 연출과 소리, 저장(세이브 시스템이 생기면 `Growth.xp`, `Growth.open`, 스킬 레벨을 저장), 숨은 상인 표시 노드(상인 구현 뒤)
 
 **Z0 보스 재설계 (2026-11-07)**: 기획서는 `../기획서/Z0_보스_재의감시자.md`입니다. 에너지 기둥 기믹, 쓰러진 채 시작해서 깨어나는 연출, 고철 짐승 모델(Codex 12)을 다룹니다.
 
@@ -526,7 +574,11 @@
 
 1. Unity Hub → `C:\Project\SOUL\unity` 열기 (Unity 6000.3.19f1)
 2. `Assets/SOUL/Scenes/Main.unity` → Play
-3. 조작: 우클릭 이동 · A 콤보 · Q 회오리 · W 레이저 파동 · E 반격 · R 칼날 폭풍 · Space 대쉬 · F 점프 · 휠 줌 · 1/2 하운드/워든 소환(커서 위치) · 0 전부 제거 · P 허수아비 모드 · C 일시정지 · `.` 한 프레임 진행 · V 측면 카메라 · H 피격 테스트 · **M 월드 지도(포드 클릭 = 빠른 이동, Shift+클릭 = 순간이동)** · **G 포드 휴식 / 공명 기둥 공명** · **K 정화 토글(디버그)** · **좌클릭 로프** · **T 등 뒤 방향으로 즉시 전환(유지)** · **F1 디버그 표시** · **Shift+1~6 파츠 토글**
+3. 조작 (기본 조작 키는 **Esc 설정 창 → 키 설정**에서 바꿀 수 있고 PlayerPrefs에 저장됩니다. 아래는 기본값입니다)
+   - 기본 조작: 우클릭 이동(고정) · 좌클릭 로프(고정) · A 공격 · Space 대쉬 · F 점프 · M 월드 지도(포드 클릭 = 빠른 이동, Shift+클릭 = 순간이동) · G 포드 휴식 / 공명 기둥 공명 · T 등 뒤 방향으로 즉시 전환(유지) · Tab 성장 화면 · 휠 줌
+   - 스킬: 파츠로 얻을 때 키를 묻습니다(스킬 = 파츠). Tab 스킬 화면, Esc 설정 창에서 다시 지정할 수 있습니다.
+   - 시스템: **Esc 설정 창(일시정지)** · F8 음소거
+   - 디버그(바꿀 수 없음, 키 지정에도 못 씀): 1/2 하운드/워든 소환(커서 위치) · 0 전부 제거 · P 허수아비 모드 · C 일시정지 · `.` 한 프레임 진행 · V 측면 카메라 · H 피격 테스트 · K 정화 토글 · F1 디버그 표시 · F2 기본 스킬 4개 · Shift+1~7 파츠 토글 / 원혼 파츠
 
 ## 3. 핵심 설계: "sim space"
 
@@ -707,7 +759,25 @@ Unity 쪽 C#(애니메이터 등)을 고쳤다면 웹과 갈라집니다. 앞으
 
 **MCP 확인**: Play 상태에서 `return UnityEngine.Object.FindFirstObjectByType<Soul.SoulGame>().AudioReport();`를 실행합니다. 결과는 "field t=12.3/131 vol=0.50 playing=True | hit=3, swing1=1, ..." 형식입니다.
 
-**아직 없는 것**: 부서지는 소품(`Breakables`) 파괴음(콜백 없음), 존별 다른 필드 곡, 앰비언스 루프(바람), 오디오 믹서·설정 UI.
+**아직 없는 것**: 부서지는 소품(`Breakables`) 파괴음(콜백 없음), 존별 다른 필드 곡, 앰비언스 루프(바람), 오디오 믹서. (음량 설정은 Esc 설정 창 §6.9)
+
+## 6.9 설정 창 (Esc, 2026-11-08)
+
+결정은 `../기획_결정사항.md`의 '설정 창' 절에 있습니다. 파일은 `Runtime/Game/KeyBinds.cs`(입력 맵), `Runtime/Game/SoulGame.Settings.cs`(창), `Runtime/Game/SettingsArt.cs`(창 아트)입니다.
+
+**입력 맵 (`KeyBinds`)**
+- 기본 조작 6개(`Act.Attack/Dash/Jump/Map/Rest/View/Growth`, 기본값 A Space F M G T Tab)를 데이터로 둡니다. `HandleInput`은 `KeyBinds.Down(act)`로 읽습니다. 마우스(우클릭 이동, 좌클릭 로프)는 고정이고 창에 표시만 됩니다.
+- 디버그 키(`KeyBinds.DebugKeys`: 0~9, P H C V K `.` Esc Enter, 수정키)와 F1~F15, 마우스는 `KeyBinds.Blocked`라서 어떤 항목에도 지정할 수 없습니다. 디버그 키 처리 코드는 `HandleInput`에 그대로 있습니다.
+- `KeyBinds.Sync()`가 `Skills.Reserved`의 내용을 다시 채웁니다. 원래 목록은 유지하고, 기본 조작의 기본 키 대신 지금 지정된 키를 넣습니다. 그래서 새 스킬 키 지정 안내(`SoulGame.Skills`)는 고치지 않아도 바뀐 기본 키를 피합니다. `Skills.Reserved`는 변경 가능한 HashSet으로 두세요.
+- 저장: `PlayerPrefs` `soul.key.<Act>`(KeyCode 정수), `soul.vol.master/music/sfx`, `soul.cam.zoom`, `soul.cam.shake`, `soul.debugHud`. 첫 `HandleInput`에서 불러오고, 창을 닫을 때와 키를 바꿀 때 저장합니다. 스킬 키는 진행 상태(`Skills.owned`)라서 PlayerPrefs에 넣지 않습니다(세이브 시스템이 생기면 그쪽에서 저장).
+
+**창 (`SoulGame.Settings`)**
+- Esc 우선순위: 새 스킬 키 지정 안내(Esc = 미지정) → 보스 정화 연출 건너뛰기 → 지도 / Tab 성장 화면 닫기 → 설정 창 열기/닫기. 키 입력 대기 중의 Esc는 대기만 취소합니다.
+- 열려 있으면 `Update`가 월드 스텝 전에 돌아가고 `realTime`도 멈춥니다. 쿨다운, 타이머, 오버로드도 같이 멈춥니다. 키 입력은 `HandleInput`의 맨 앞(`SettingsInput`)에서 먹고, 마우스 이벤트는 `OnGUI`가 Repaint 외의 이벤트에서 창만 그린 뒤 `Event.Use()`로 먹습니다. 그래서 밑에 있는 HUD 버튼도 눌리지 않습니다.
+- 탭: **키 설정**(기본 조작, 고정 마우스, 얻은 스킬. 항목 클릭 → 키 누르기 → 쓰는 중인 키면 '교체(상대가 내 옛 키를 받음) / 상대 키 비우기 / 취소', '기본값으로') · **사운드**(전체 `SoulAudio.masterVolume` → `AudioListener.volume`, 음악, 효과음, 음소거) · **화면**(카메라 줌 기본값, 화면 흔들림 `FollowCam.shakeScale`, 디버그 표시) · **게임**(계속하기, 마지막 포드로 돌아가기(디버그), 게임 종료. 에디터에서는 플레이를 정지합니다).
+- 아트: `Runtime/Game/SettingsArt.cs`. `Resources/UI/ui_panel.png`(1536×1024)의 조각을 9-slice로 그립니다. 조각 좌표와 테두리는 `ui_atlas.md` §3과 같은 왼쪽 위 기준 픽셀값(`SettingsArt.PanelP`, `ButtonP/ButtonOnP/ButtonOffP`, `TabP/TabOnP`, `TrackP`, `KnobP`, `KeycapP/KeycapOnP/KeycapWideP/KeycapSmallP`)입니다. 슬라이더 막대에는 채움이 그려져 있어서, 홈 부분을 덮고 실제 값을 다시 그립니다. 패널 테두리 크기는 `PanelScale`(0.36)로 조절합니다. 이 png가 없으면 HUD 키트 프레임(`UiArt.Panel`)을 쓰고, 그것도 없으면 평면 IMGUI로 그립니다. 임포트 설정은 ui_kit과 같습니다(밉맵 없음, NPOT 그대로, 비압축).
+
+**MCP 테스트 API**: `g.InputForTest(KeyCode...)`(그 키들을 누른 셈 치고 `HandleInput`을 한 번 돌린 뒤 애니 이름을 돌려줌), `g.RebindForTest("Attack"|스킬 id, KeyCode)`(충돌이면 "CONFLICT …"), `g.ResolveForTest(swap)`, `g.OpenSettings()/CloseSettings()`, `g.SettingsSave()/SettingsReload()`. 전체 검사 스크립트는 `tools/settings_test.cs`입니다.
 
 ## 7. 남은 일 / 알려진 차이
 

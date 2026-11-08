@@ -13,6 +13,8 @@ namespace Soul
     {
         public static SoulAudio I;
         public static float musicVolume = .5f, sfxVolume = .8f;
+        /// overall volume (Esc settings · 사운드), applied through AudioListener.volume
+        public static float masterVolume = 1;
         public static bool muted;
         /// sim-space listener anchor (the player): sounds fade with distance from here, not from the high camera
         public Vector3 listener;
@@ -88,7 +90,7 @@ namespace Soul
         void LateUpdate()
         {
             if (Input.GetKeyDown(KeyCode.F8)) { muted = !muted; Debug.Log("[SOUL audio] " + (muted ? "muted" : "unmuted")); }
-            AudioListener.volume = muted ? 0 : 1;
+            AudioListener.volume = muted ? 0 : masterVolume;
             if (game) game.AudioTick(Time.unscaledDeltaTime);
             MusicUpdate(Time.unscaledDeltaTime);
         }

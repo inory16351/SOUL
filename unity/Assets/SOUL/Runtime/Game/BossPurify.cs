@@ -58,7 +58,7 @@ namespace Soul
             // hatred: red souls burst from the cracked core, swirl up, turn white and leave
             var core = wreck != null ? wreck.CoreWorld() : center + Vector3.up * 2;
             if (purifyT > .3f && purifyT < 1.7f) { int want = Mathf.Min(80, (int)((purifyT - .3f) / 1.4f * 80)); while (motesSpawned < want) { SpawnMote(core); motesSpawned++; } }
-            UpdateMotes(dt, core, wreck != null ? wreck.LimbWorld() : center + Vector3.up * 3);
+            UpdateMotes(dt, core, core);   // leftover grudge spirals back into the cracked core
             if (At(.35f)) { vfx.Flash(core, 2.2f); cam.Shake(.12f); }
             // camera: far out over the arena while the wave leaves, then back to the player
             if (purifyT >= PURIFY_CAM_OUT && purifyT < PURIFY_CAM_BACK) { cam.fightTarget = 1; cam.fightZoom = 3.6f; cam.fightFocus = center; }
@@ -84,13 +84,14 @@ namespace Soul
                 if (Random.value < dt * 10) enemies.Wisp(p, .35f);
                 if (up > .9f && player.alive && Sim.FlatY(ch.root.position - p).magnitude < 2.2f) TakeReward(p);
             }
-            // leftover grudge condenses in the twisted leg and drops as a red part (World/GrudgeParts, SoulGame.Grudge)
-            var knee = wreck != null ? wreck.LimbWorld() : center + Vector3.up * 3;
+            // leftover grudge condenses in the cracked core, which breaks out as the red 뒤틀린 에너지 코어 part
+            // (World/GrudgeParts, SoulGame.Grudge)
+            var knee = core;
             if (purifyT >= REWARD_AT && purifyT < GRUDGE_DROP - .4f) { int want = Mathf.Min(36, (int)((purifyT - REWARD_AT) / 1.2f * 36)); while (grudgeSpawned < want) { SpawnMote(center + new Vector3(Random.Range(-7f, 7f), Random.Range(.5f, 4f), Random.Range(-7f, 7f)), true); grudgeSpawned++; } }
             if (!grudgeDropped && purifyT >= GRUDGE_DROP)
             {
                 grudgeDropped = true;
-                // under the knee, pushed out past the wreck's body and kept 3 m from the rope arm
+                // under the core, pushed out past the wreck's body and kept 3 m from the rope arm
                 var wp = wreck != null ? wreck.pos : center; float wr = (wreck != null ? wreck.radius : 3) + 1.5f;
                 var drop = new Vector3(knee.x, 0, knee.z); var fromBody = Sim.FlatY(drop - wp);
                 if (fromBody.magnitude < wr) drop = Sim.FlatY(wp) + (fromBody.magnitude > .1f ? fromBody.normalized : Sim.Forward(purifyArena.entranceYaw + 1.6f)) * wr;
@@ -168,7 +169,7 @@ namespace Soul
                 if (!m.go.activeSelf) continue;
                 m.age += dt;
                 if (m.grudge)
-                {   // drawn in along a tightening spiral, staying red, shrinking into the knee
+                {   // drawn in along a tightening spiral, staying red, shrinking into the core
                     float u = Mathf.Clamp01(m.age / 1.4f); if (u >= 1) { m.go.SetActive(false); continue; }
                     float e = u * u * (3 - 2 * u); m.ang += m.spin * dt * (1 + u * 3);
                     m.pos = Vector3.Lerp(m.from, knee, e) + new Vector3(Mathf.Cos(m.ang), 0, Mathf.Sin(m.ang)) * (1.2f * (1 - e));

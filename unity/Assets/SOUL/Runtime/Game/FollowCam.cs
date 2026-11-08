@@ -17,7 +17,9 @@ namespace Soul
         public FollowCam(Camera cam) { camera = cam; camera.fieldOfView = 38; camera.nearClipPlane = .1f; camera.farClipPlane = 140; }
         public bool Toggle() { side = !side; return side; }
         public void ZoomBy(float delta) { zoom = Mathf.Clamp(zoom * (1 + delta), .55f, 2.2f); }
-        public void Shake(float power) { shakeAmount = Mathf.Max(shakeAmount, power); }
+        /// screen shake strength (Esc settings · 화면): 0 = off, 1 = default
+        public static float shakeScale = 1;
+        public void Shake(float power) { shakeAmount = Mathf.Max(shakeAmount, power * shakeScale); }
         /// ground point (sim space) under a screen position, or null
         public Vector3? Pick(Vector2 screen, float planeY = 0)
         {

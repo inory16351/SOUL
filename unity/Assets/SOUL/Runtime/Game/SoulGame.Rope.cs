@@ -25,7 +25,7 @@ namespace Soul
 
         void RopeInit()
         {
-            pickups = new Pickups(scene.pickups) { onCollect = it => { scrap += it.amount; vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
+            pickups = new Pickups(scene.pickups) { onCollect = it => { GainScrap(it.amount); vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
             var prevKill = enemies.onKill;
             enemies.onKill = e => { prevKill?.Invoke(e); pickups.Burst(e.Center(), e.def.bossName != null ? 10 : e.type == "crawler" ? 2 : 4); };
             var cg = scene.ropeCable;
@@ -44,7 +44,7 @@ namespace Soul
             {
                 if (!e.alive || e.state == "spawn") continue;
                 float dc = Sim.FlatY(e.pos - cursor).magnitude, dp = Sim.FlatY(e.pos - p).magnitude;
-                if (dc < e.radius + 1 && dp < RopeAnchors.RANGE && dp > 1.2f && Mathf.Abs(e.pos.y - p.y) < 2.5f && dc < bd) { bd = dc; best = e; }
+                if (dc < e.radius + 1 && dp < RopeRange && dp > 1.2f && Mathf.Abs(e.pos.y - p.y) < 2.5f && dc < bd) { bd = dc; best = e; }
             }
             if (best != null)
             {
@@ -52,7 +52,7 @@ namespace Soul
                 return new RopeAim { goal = big ? RopeGoal.Zip : RopeGoal.Yank, point = best.Center(), enemy = best, Label = big ? "돌진 베기" : "끌어오기" };
             }
             var item = pickups.Nearest(cursor, 1.4f);
-            if (item != null && Sim.FlatY(item.pos - p).magnitude < RopeAnchors.RANGE) return new RopeAim { goal = RopeGoal.Item, point = item.pos, item = item, Label = "낚아채기" };
+            if (item != null && Sim.FlatY(item.pos - p).magnitude < RopeRange) return new RopeAim { goal = RopeGoal.Item, point = item.pos, item = item, Label = "낚아채기" };
             RopeAnchor ba = null; bd = 3.5f;
             foreach (var a in RopeAnchors.All)
             {
@@ -66,7 +66,7 @@ namespace Soul
             var dir = new Vector2(to.x, to.z);
             if (RopeAnchors.FindEdge(p, dir, Mathf.Min(RopeAnchors.RANGE, dir.magnitude + 3), out var edge, out var land))
                 return new RopeAim { goal = RopeGoal.Edge, point = edge, land = land, Label = "당겨 오르기" };
-            var miss = p + Sim.SetLength(to.sqrMagnitude > 1e-4f ? to : ch.Forward, Mathf.Min(RopeAnchors.RANGE, Mathf.Max(3, to.magnitude)));
+            var miss = p + Sim.SetLength(to.sqrMagnitude > 1e-4f ? to : ch.Forward, Mathf.Min(RopeRange, Mathf.Max(3, to.magnitude)));
             return new RopeAim { goal = RopeGoal.Miss, point = miss + new Vector3(0, HAND, 0) };
         }
 

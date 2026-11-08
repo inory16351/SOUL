@@ -131,7 +131,7 @@ namespace Soul
         {
             var p = ch.root.position;
             float d = Terrain.Water(p.x, p.z, out _);
-            anim.speedScale = RopeTravel ? 1 : Terrain.Slow(p.x, p.z);
+            anim.speedScale = RopeTravel ? 1 : Terrain.Slow(p.x, p.z) * OverloadSpeed;   // 코어 과부하: faster
             if (d > .08f && anim.speed > .4f && !Falling)
             {
                 rippleClock -= dt;
@@ -152,6 +152,7 @@ namespace Soul
         {
             if (ZoneState.HasCore(s.zone)) { Cue($"{s.name} · 이미 공명함 (스킬은 성장 단계에서 연다)", 1.6f); return; }
             ZoneState.GiveCore(s.zone); MapFog.RevealZone(s.zone);
+            if (Skills.ShrineSkill[s.zone] != null) After(1.2f, () => GrantSkill(Skills.ShrineSkill[s.zone]));   // 스킬 = 파츠 (draft source)
             var at = s.pos + new Vector3(0, ch.root.position.y + 4.2f, 0);
             vfx.Ring(Sim.FlatY(ch.root.position, .1f), 2.4f, true); vfx.Flash(at, 1.4f); vfx.Burst(at, 30, 1.4f); cam.Shake(.05f);
             Cue($"{s.name} 공명 · {ZoneGraph.Zones[s.zone].name} 지도 공개 · 포드 워프 개방", 3);

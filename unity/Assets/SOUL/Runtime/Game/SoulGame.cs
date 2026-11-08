@@ -106,12 +106,12 @@ namespace Soul
         {
             if (!player.alive) return;
             if (Invulnerable()) { Cue("회피!", .6f); vfx.Flash(Sim.FlatY(ch.root.position, 1.1f), .7f); return; }
-            if (anim.name == "counter" && anim.time >= .03f && anim.time <= .27f)
+            if (anim.name == "counter" && anim.time >= .03f && anim.time <= .27f + CounterWindowBonus)
             {
                 enemy.ToStagger(1.4f); enemy.Damage(10, ch.root.position, true); face.Set("wide", .9f); Cue("반격!", .8f);   // 놀람 = every successful counter
                 var p = ch.bladeBase.WorldPosition; vfx.Ring(p, 1.4f, true); vfx.Burst(p, 26, 1.3f); cam.Shake(.09f); hitStop = .1f; return;
             }
-            player.hp = Mathf.Max(0, player.hp - dmg); hurtFlash = 1;
+            player.hp = Mathf.Max(0, player.hp - dmg * OverloadTaken); hurtFlash = 1;
             var d = from - ch.root.position; ch.yaw = Mathf.Atan2(d.x, d.z); ch.ApplyYaw();
             moveTarget = null; GetHit(); cam.Shake(.11f); hitStop = Mathf.Max(hitStop, .05f);
             if (player.hp <= 0) PlayerDie();
@@ -132,7 +132,7 @@ namespace Soul
                 if (dist > area.r) continue;
                 if (area.a > 0 && dist > .6f && Vector3.Dot(d.normalized, f) < Mathf.Cos(area.a / 2)) continue;
                 if (!CanHit(e, m)) continue;
-                hitSet[e] = anim.time; e.Damage(DMG.TryGetValue(n, out var dm) ? dm : 15, ch.root.position, heavy);
+                hitSet[e] = anim.time; e.Damage((DMG.TryGetValue(n, out var dm) ? dm : 15) * SkillDamageScale(n), ch.root.position, heavy);
                 vfx.Burst(e.Center(), heavy ? 28 : 18, heavy ? 1.3f : 1); cam.Shake(heavy ? .1f : .06f); hitStop = Mathf.Max(hitStop, heavy ? .07f : .045f);
                 if (heavy) face.Set("happy", .7f);
             }
@@ -149,7 +149,7 @@ namespace Soul
                 foreach (var h in enemies.HitsAlong(p, q, BLADE_REACH))
                 {
                     if (!CanHit(h.e, m)) continue;
-                    hitSet[h.e] = anim.time; h.e.Damage(DMG.TryGetValue(n, out var dm) ? dm : 15, ch.root.position, heavy);
+                    hitSet[h.e] = anim.time; h.e.Damage((DMG.TryGetValue(n, out var dm) ? dm : 15) * SkillDamageScale(n), ch.root.position, heavy);
                     vfx.Burst(h.point, heavy ? 30 : 20, heavy ? 1.4f : 1); cam.Shake(heavy ? .1f : .06f); hitStop = Mathf.Max(hitStop, heavy ? .07f : .045f);
                     if (heavy) face.Set("happy", .7f);
                 }
@@ -195,11 +195,15 @@ namespace Soul
 
         void HandleInput()
         {
+            if (SettingsInput()) return;   // Esc settings window (SoulGame.Settings): pauses and eats input while open
+            if (SkillInput()) return;   // skill keys / the new-skill key prompt (SoulGame.Skills)
             ropeHeld = Input.GetMouseButton(0);
             if (!showMap && Input.GetMouseButtonDown(0)) { var c = cam.Pick(Input.mousePosition, ch.root.position.y); if (c.HasValue) FireRope(c.Value); }
-            if (RopeHolds) { if (Input.GetKeyDown(KeyCode.M)) showMap = !showMap; return; }   // on the rope: nothing else
-            if (Input.GetKeyDown(KeyCode.A)) Attack();
-            foreach (var k in COOLDOWN.Keys) if (Input.GetKeyDown(k)) Skill(k);
+            if (RopeHolds) { if (KeyBinds.Down(KeyBinds.Act.Map)) showMap = !showMap; return; }   // on the rope: nothing else
+            // basic controls come from the key map (KeyBinds, Esc settings); Skill() still keys on the legacy codes internally
+            if (KeyBinds.Down(KeyBinds.Act.Attack)) Attack();
+            if (KeyBinds.Down(KeyBinds.Act.Dash)) Skill(KeyCode.Space);   // 스킬 = 파츠: only dash / jump are basic keys
+            if (KeyBinds.Down(KeyBinds.Act.Jump)) Skill(KeyCode.F);
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             if (shift) { for (int i = Parts.Rope; i <= Parts.LabKeys; i++) if (Input.GetKeyDown(KeyCode.Alpha0 + i)) TogglePart(i); }   // debug: Shift+1..6 toggles parts
             else
@@ -214,10 +218,10 @@ namespace Soul
             if (Input.GetKeyDown(KeyCode.Period) && paused) stepFrames++;
             if (Input.GetKeyDown(KeyCode.V)) cam.Toggle();
             // T (like LoL Space): snap the view behind the character at once; it stays there (press again to re-snap)
-            if (Input.GetKeyDown(KeyCode.T)) cam.SnapYaw(Sim.WrapPi(ch.yaw + Mathf.PI));
-            if (Input.GetKeyDown(KeyCode.M)) showMap = !showMap;
+            if (KeyBinds.Down(KeyBinds.Act.View)) cam.SnapYaw(Sim.WrapPi(ch.yaw + Mathf.PI));
+            if (KeyBinds.Down(KeyBinds.Act.Map)) showMap = !showMap;
             if (Input.GetKeyDown(KeyCode.F1)) { debugHud = !debugHud; Cue(debugHud ? "디버그 표시 켜짐" : "디버그 표시 꺼짐", 1); }
-            if (Input.GetKeyDown(KeyCode.G)) RestAtPod();
+            if (KeyBinds.Down(KeyBinds.Act.Rest)) RestAtPod();
             if (Input.GetKeyDown(KeyCode.K)) TogglePurify();
             if (showMap && Input.GetMouseButtonDown(0))
             {   // debug: click the world map to teleport there
@@ -231,6 +235,7 @@ namespace Soul
         // ---------- frame ----------
         void Update()
         {
+            if (settingsOpen) { HandleInput(); if (settingsOpen) { cam.Update(0, ch.root.position); return; } }   // Esc settings: world and realTime frozen
             float realDt = Mathf.Min(Time.unscaledDeltaTime, .05f); realTime += realDt;
             HandleInput();
             if (paused)
@@ -325,7 +330,7 @@ namespace Soul
             string n = anim.name;
             string state = n == "hit" || n == "stagger" ? "hurt" : n == "heavyCharge" ? "wide" : anim.busy && n != "jump" ? "focus" : "idle";
             face.Update(realDt, state);
-            open.Update(ch.root.position); VistaUpdate(realDt); GrudgeUpdate(realDt); atmo.Update(realDt, ch.root.position); ZoneUpdate(realDt);
+            open.Update(ch.root.position); VistaUpdate(realDt); GrudgeUpdate(realDt); SkillsUpdate(realDt); atmo.Update(realDt, ch.root.position); ZoneUpdate(realDt);
             // top-down cutaway: dither out world geometry above head height between the camera and the player
             Shader.SetGlobalVector("_SoulCutCenter", (Vector4)Sim.ToUnity(ch.root.position + Sim.ApplyAxisAngle(new Vector3(0, 0, 3), Vector3.up, cam.yaw)) + new Vector4(0, 0, 0, 9.5f));
             Shader.SetGlobalVector("_SoulCutParams", new Vector4(2.3f, 2.5f, 0, 0));
@@ -402,6 +407,8 @@ namespace Soul
             if (!white) { white = new Texture2D(1, 1); white.SetPixel(0, 0, Color.white); white.Apply(); }
             if (small == null) { small = new GUIStyle(GUI.skin.label) { fontSize = 13, normal = { textColor = new Color(.85f, .93f, 1f) } }; big = new GUIStyle(small) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter }; keyStyle = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 12 }; }
             float W = Screen.width, H = Screen.height;
+            // Esc settings: its controls see input events first and eat the rest, so HUD buttons underneath never fire
+            if (settingsOpen && Event.current.type != EventType.Repaint) { SettingsGUI(W, H); if (Event.current.isMouse || Event.current.type == EventType.ScrollWheel) Event.current.Use(); return; }
             if (hurtFlash > 0) { GUI.color = new Color(.8f, .05f, .02f, hurtFlash * .35f); GUI.DrawTexture(new Rect(0, 0, W, H), white); }
             enemies?.DrawGUI(cam.camera); atmo?.DrawGUI();
             // hp
@@ -426,31 +433,28 @@ namespace Soul
             if (debugHud && atmo?.Current != null) GUI.Label(new Rect(20, 142, 400, 20), $"{atmo.Current.name}  ·  {ch.root.position.x:F0}, {ch.root.position.z:F0}", small);
             if (debugHud) GUI.Label(new Rect(20, 182, 400, 20), anim.name.ToUpper() + (anim.name.StartsWith("light") ? $"   0{anim.name[anim.name.Length - 1]} / 03" : ""), small);
             // skill bar
-            var slots = new (KeyCode code, string key, string label)[] { (KeyCode.A, "A", "연속 베기"), (KeyCode.Q, "Q", "회오리"), (KeyCode.W, "W", "레이저 파동"), (KeyCode.E, "E", "반격"), (KeyCode.R, "R", "칼날 폭풍"), (KeyCode.Space, "SPACE", "대쉬"), (KeyCode.F, "F", "점프") };
-            int[] slotIcon = { UiArt.SLASH, UiArt.WHIRL, UiArt.WAVE, UiArt.PARRY, UiArt.STORM, UiArt.DASH, UiArt.JUMP };
+            var slots = new System.Collections.Generic.List<(string key, string label, int icon, float cdLeft)>(); SkillBar(slots);   // learned skills only
             bool art = UiArt.Kit && UiArt.HasIcons;
-            float sw = art ? 70 : 74, x0 = W / 2 - slots.Length * sw / 2;
-            for (int i = 0; i < slots.Length; i++)
+            float sw = art ? 70 : 74, x0 = W / 2 - slots.Count * sw / 2;
+            for (int i = 0; i < slots.Count; i++)
             {
                 var r = art ? new Rect(x0 + i * sw + 3, H - 88, sw - 6, (sw - 6) * 196f / 188f) : new Rect(x0 + i * sw + 4, H - 74, sw - 8, 56);
                 if (art)
                 {   // generated slot frame + icon; cooldown darkens the icon from the top
                     var inner = new Rect(r.x + r.width * .14f, r.y + r.height * .14f, r.width * .72f, r.height * .72f);
                     GUI.color = new Color(.02f, .03f, .04f, .85f); GUI.DrawTexture(inner, white);
-                    GUI.color = Color.white; UiArt.Icon(inner, slotIcon[i], .08f);
-                    if (COOLDOWN.TryGetValue(slots[i].code, out var cd2) && ready.TryGetValue(slots[i].code, out var t2) && t2 > realTime)
-                    { float left = (t2 - realTime) / cd2; GUI.color = new Color(0, 0, 0, .65f); GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width, inner.height * left), white); }
+                    GUI.color = Color.white; UiArt.Icon(inner, slots[i].icon, .08f);
+                    if (slots[i].cdLeft > 0) { GUI.color = new Color(0, 0, 0, .65f); GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width, inner.height * slots[i].cdLeft), white); }
                     GUI.color = Color.white; UiArt.Piece(r, UiArt.Slot);
                     GUI.Label(new Rect(r.x, r.yMax - 8, r.width, 18), slots[i].key, keyStyle);
                     continue;
                 }
                 GUI.color = new Color(.02f, .05f, .08f, .75f); GUI.DrawTexture(r, white);
-                if (COOLDOWN.TryGetValue(slots[i].code, out var cd) && ready.TryGetValue(slots[i].code, out var t) && t > realTime)
-                { float left = (t - realTime) / cd; GUI.color = new Color(0, 0, 0, .6f); GUI.DrawTexture(new Rect(r.x, r.y, r.width, r.height * left), white); }
+                if (slots[i].cdLeft > 0) { GUI.color = new Color(0, 0, 0, .6f); GUI.DrawTexture(new Rect(r.x, r.y, r.width, r.height * slots[i].cdLeft), white); }
                 GUI.color = Color.white; GUI.Label(new Rect(r.x, r.y + 4, r.width, 22), slots[i].key, keyStyle); GUI.Label(new Rect(r.x, r.y + 28, r.width, 20), slots[i].label, keyStyle);
             }
             GUI.color = Color.white;
-            string hint = realTime < cueUntil ? cueText : "우클릭 이동 · A 공격 · Q W E R 스킬 · SPACE 대쉬 · F 점프 · G 휴식 · M 지도 · 휠 줌 · 1/2 소환 · 0 제거 · P 허수아비 · C 정지";
+            string hint = realTime < cueUntil ? cueText : $"우클릭 이동 · {KeyBinds.Name(KeyBinds.Act.Attack)} 공격 · {KeyBinds.Name(KeyBinds.Act.Dash)} 대쉬 · {KeyBinds.Name(KeyBinds.Act.Jump)} 점프 · Tab 스킬 · {KeyBinds.Name(KeyBinds.Act.Rest)} 휴식 · {KeyBinds.Name(KeyBinds.Act.Map)} 지도 · 휠 줌 · Esc 설정 · 1/2 소환 · 0 제거 · P 허수아비 · C 정지";
             GUI.Label(new Rect(0, H - 104, W, 24), hint, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             // summon panel
             float bx = W - 170;
@@ -471,8 +475,9 @@ namespace Soul
                 GUI.color = Color.white; GUI.Label(new Rect(0, H * .68f + 28, W, 20), to, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             }
             if (debugHud) GUI.Label(new Rect(20, 102, 500, 20), $"파츠: {Parts.Owned()}   ·   M 지도 · Shift+1~6 파츠 토글 · F1 디버그 표시", small);
-            ZoneGUI(W, H); RopeGUI(); GrudgeGUI(W, H);
+            ZoneGUI(W, H); RopeGUI(); GrudgeGUI(W, H); SkillsGUI(W, H);
             if (showMap) DrawMap();
+            SettingsGUI(W, H);   // Esc settings window, drawn last (on top)
         }
 
         Rect MapRect()

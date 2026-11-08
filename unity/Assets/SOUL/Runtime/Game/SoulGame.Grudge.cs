@@ -23,8 +23,8 @@ namespace Soul
             grudgeGlowMat = Mats.Unlit(new Color(3.2f, .35f, .2f, 1), Blend.Opaque, true);
             GrudgeParts.Cleansed += z =>
             {
-                scrap += GrudgeParts.PURIFY_REWARD; open.RebuildAll(ch.root.position);
-                Cue($"{ZoneGraph.Zones[z].name}의 원혼이 정화되었다 · 기본 부품 +{GrudgeParts.PURIFY_REWARD}", 3.2f);
+                GainScrap(GrudgeParts.PURIFY_REWARD); open.RebuildAll(ch.root.position);
+                Cue($"{ZoneGraph.Zones[z].name} · 포드의 정화가 끝났다 · 기본 부품 +{GrudgeParts.PURIFY_REWARD}", 3.2f);
             };
         }
 
@@ -60,7 +60,7 @@ namespace Soul
                     Object.Destroy(d.go); grudgeDrops.RemoveAt(i);
                     GrudgeParts.carried.Add(d.zone);
                     var def = GrudgeParts.Defs[d.zone];
-                    Cue($"원혼 파츠 · {def.name} ({def.boss}) — 포드에서 정화하거나 장착할 수 있다", 3.4f);
+                    Cue($"붉게 빛나는 부품 · {def.name} — 포드에서 정화하거나 장착할 수 있다", 3.4f);
                 }
             }
             GrudgeParts.Tick(dt);
@@ -75,12 +75,12 @@ namespace Soul
             {
                 float w = 440, h = 64 + GrudgeParts.carried.Count * 74, x = W - w - 28, y = H * .32f;
                 GUI.color = new Color(0, 0, 0, .72f); GUI.DrawTexture(new Rect(x, y, w, h), white);
-                GUI.color = new Color(1, .55f, .5f); GUI.Label(new Rect(x + 16, y + 10, w - 32, 22), "원혼 파츠", new GUIStyle(big) { fontSize = 17, alignment = TextAnchor.UpperLeft });
+                GUI.color = new Color(1, .55f, .5f); GUI.Label(new Rect(x + 16, y + 10, w - 32, 22), "붉게 빛나는 부품", new GUIStyle(big) { fontSize = 17, alignment = TextAnchor.UpperLeft });
                 float yy = y + 40;
                 foreach (int z in GrudgeParts.carried.ToArray())
                 {
                     var def = GrudgeParts.Defs[z];
-                    GUI.color = Color.white; GUI.Label(new Rect(x + 16, yy, w - 32, 20), $"{def.name}  ·  {def.boss}  ·  능력: {def.ability}", small);
+                    GUI.color = Color.white; GUI.Label(new Rect(x + 16, yy, w - 32, 20), $"{def.name}  ·  능력: {def.ability}", small);
                     if (GUI.Button(new Rect(x + 16, yy + 24, 190, 30), "포드에 맡겨 정화 (15분)")) { GrudgeParts.Submit(z, pod); Cue($"{def.name}을(를) {pod.name}에 맡겼다 · 정화 중", 2.4f); }
                     bool confirming = grudgeConfirm == z;
                     GUI.color = confirming ? new Color(1, .45f, .4f) : new Color(1, .8f, .78f);
@@ -90,8 +90,9 @@ namespace Soul
                         else
                         {
                             grudgeConfirm = -1; GrudgeParts.Equip(z);
+                            if (Skills.GrudgeSkill[z] != null) After(1.4f, () => GrantSkill(Skills.GrudgeSkill[z]));
                             vfx.Flash(Sim.FlatY(ch.root.position, 1.4f), 1.4f); cam.Shake(.08f); face.Preview("blank", 1.2f);
-                            Cue($"{def.name} 장착 · {def.ability} — 원혼 {GrudgeParts.Count}", 3);
+                            Cue($"{def.name} 장착 · {def.ability}", 3);
                         }
                     }
                     yy += 74;

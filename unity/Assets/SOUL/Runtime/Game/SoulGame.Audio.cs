@@ -142,7 +142,7 @@ namespace Soul
             {
                 if (cueText.StartsWith("충전 완료")) { SoulAudio.Play("rest", null, 1, 1, 0); audioMgr.MusicOnce("rest"); }
                 else if (cueText.Contains(" 공명 · ")) SoulAudio.Play("shrine", null, 1, 1, 0);
-                else if (cueText.StartsWith("원혼 파츠")) SoulAudio.Play("grudge", null, .9f, .9f, 0);
+                else if (cueText.StartsWith("붉게 빛나는 부품")) SoulAudio.Play("grudge", null, .9f, .9f, 0);
                 else if (cueText.StartsWith("빠른 이동")) SoulAudio.Play("reboot", null, .6f, 1.2f, 0);
             }
             auCue = cueText;
