@@ -74,7 +74,7 @@ namespace Soul
         float SkillDamageScale(string move)
         {
             string id = move == "heavy" || move == "heavyCharge" ? "whirl" : move == "flurry" ? "storm" : move == "counter" ? "counter" : move == "wave" ? "wave" : null;
-            return (id == null ? 1 : Skills.DamageScale(Skills.Get(id))) * Growth.DamageScale(move);
+            return (id == null ? 1 : Skills.DamageScale(Skills.Get(id))) * Growth.DamageScale(move) * (perkBlade ? 1.1f : 1);   // 벼린 칼날 (merchant)
         }
         /// move speed (anim.speedScale, SoulGame.Zone WaterStep) = 코어 과부하 × 다리 nodes
         float OverloadSpeed => (overloadLeft > 0 ? Skills.OVERLOAD_SPEED : 1) * Growth.SpeedScale;

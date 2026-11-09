@@ -26,7 +26,7 @@ namespace Soul
 
         class Particle { public GameObject go; public Transform t; public MeshRenderer r; public Vector3 pos, vel; public Color color; public float life, max, width, size; public bool spark; }
         class FlashFx { public GameObject go; public Transform t; public MeshRenderer r; public Vector3 pos; public float life, max, size; }
-        class RingFx { public GameObject go; public Transform t; public MeshRenderer r; public float life, power; public bool upright; }
+        class RingFx { public GameObject go; public Transform t; public MeshRenderer r, behind; public float life, power; public bool upright; }
         class Ghost { public GameObject go; public Material mat; public float life, max, start; }
         struct Sample { public Vector3 b, tip; public float time; }
 
@@ -39,6 +39,7 @@ namespace Soul
 
         readonly Transform root; readonly CharacterRig ch;
         readonly Material sparkMat, flashMat, dustMat, ringMat, waveMat;
+        Material ringBehindMat;
         readonly Mesh box, quad, ringQuad;
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
         readonly Texture2D glow, puff, ringTex;
@@ -137,6 +138,22 @@ namespace Soul
                 go.transform.localScale = Vector3.one * part.size; Tint(r, Color.white, 1);
                 particles.Add(part);
             }
+        }
+        /// the right-click move ring (2026-11-09): the old expanding ring, but on the real floor height, plus a copy drawn
+        /// only where something covers it (ZTest Greater), so it shows over a roof / wall only in the covered part
+        public void MoveRing(Vector3 floor, float power = .18f)
+        {
+            var go = Obj("ring", ringQuad, ringMat, out var r);
+            go.transform.SetPositionAndRotation(Sim.ToUnity(floor + new Vector3(0, .05f, 0)), Sim.ToUnity(Sim.EulerXYZ(-Mathf.PI / 2, 0, 0)));
+            go.transform.localScale = Vector3.one * .3f;
+            if (ringBehindMat == null)
+            {
+                ringBehindMat = new Material(ringMat); ringBehindMat.SetFloat("_ZTest", (float)CompareFunction.Greater); ringBehindMat.renderQueue = ringMat.renderQueue + 1;
+            }
+            var b = new GameObject("ring behind"); b.transform.SetParent(go.transform, false);
+            b.AddComponent<MeshFilter>().sharedMesh = ringQuad; var br = b.AddComponent<MeshRenderer>(); br.sharedMaterial = ringBehindMat; br.shadowCastingMode = ShadowCastingMode.Off;
+            Tint(r, new Color(1.8f, 2.2f, 2.6f), 1); Tint(br, new Color(1.8f, 2.2f, 2.6f), .7f);
+            rings.Add(new RingFx { go = go, t = go.transform, r = r, behind = br, power = power });
         }
         public void Ring(Vector3 pos, float power = 1, bool upright = false)
         {
@@ -262,6 +279,7 @@ namespace Soul
                 if (t >= 1) { Object.Destroy(r.go); rings.RemoveAt(i); continue; }
                 r.t.localScale = Vector3.one * (.3f + (r.upright ? 1.6f : 4.2f) * Mathf.Sqrt(t) * r.power);
                 Tint(r.r, new Color(1.8f, 2.2f, 2.6f), (1 - t) * (1 - t));
+                if (r.behind) Tint(r.behind, new Color(1.8f, 2.2f, 2.6f), .7f * (1 - t) * (1 - t));
             }
             for (int i = waves.Count - 1; i >= 0; i--)
             {

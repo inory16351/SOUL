@@ -35,11 +35,18 @@ namespace Soul.EditorTools
             Build("crawler", "Crawler");
             Build("warden", "Warden");
             if (File.Exists(Path.Combine(DataDir, "ashWarden.json"))) Build("ashWarden", "AshWarden");   // Z0 boss (Codex job 05)
+            BuildFieldEnemies();
             Build("map", "Map");
             BuildProps();
             File.Copy(Path.Combine(DataDir, "moves.json"), Path.Combine(RuntimeData, "moves.json"), true);
             AssetDatabase.Refresh();
             Debug.Log("[SOUL] import done");
+        }
+        /// Z0 field roster (Codex job 17): built when their JSON exists (Runtime falls back to Crawler / Warden otherwise)
+        public static void BuildFieldEnemies()
+        {
+            foreach (var (file, prefab) in new[] { ("ashMite", "AshMite"), ("sentry", "Sentry"), ("houndAlpha", "HoundAlpha"), ("executor", "Executor") })
+                if (File.Exists(Path.Combine(DataDir, file + ".json"))) Build(file, prefab);
         }
         public static void CopyFromWeb()
         {

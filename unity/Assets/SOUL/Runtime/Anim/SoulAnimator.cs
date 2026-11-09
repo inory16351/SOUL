@@ -58,7 +58,16 @@ namespace Soul
         float airLift, airLiftT0, airLiftT1;
         float A(Vector3 p) => ANKLE + groundAt(p.x, p.z);
         /// current jump-arc height above the take-off floor (0 when not in an arc)
-        public float ArcHeight { get { var m = move; if (m?.arc == null || time <= m.arc[0] || time >= m.arc[1]) return 0; float s = (time - m.arc[0]) / (m.arc[1] - m.arc[0]); return m.arc[2] * 4 * s * (1 - s); } }
+        public float ArcHeight { get { var m = move; if (m?.arc == null || time <= m.arc[0] || time >= m.arc[1]) return 0; float s = (time - m.arc[0]) / (m.arc[1] - m.arc[0]); return m.arc[2] * arcScale * 4 * s * (1 - s); } }
+        /// jump arc height multiplier for the current move (the air jump is taller); reset by Play
+        public float arcScale = 1, rootScale = 1;
+        /// second jump in mid-air: restart the jump straight at its take-off (no ground crouch), `scale` x arc height.
+        /// The caller raises the root by the current ArcHeight first so the body doesn't dip.
+        public void AirJump(float scale, float reach)
+        {
+            Play("jump"); var m = move; if (m?.arc == null) return;
+            time = m.arc[0] + 1e-3f; arcScale = scale; rootScale = reach; blend = .5f;
+        }
         public bool InArc { get { var m = move; return m?.arc != null && time > m.arc[0] && time < m.arc[1]; } }
         /// the root was raised by `lift` metres onto a ledge during the jump arc
         public void AirLift(float lift) { var m = move; if (m?.arc == null) return; airLift += lift; airLiftT0 = time; airLiftT1 = m.arc[1]; }
@@ -156,7 +165,7 @@ namespace Soul
             if (n == "idle") { feet = new Dictionary<string, Foot>(); foreach (var s in new[] { "L", "R" }) feet[s] = new Foot { target = ankles[s], start = ankles[s], wasStance = true, moving = true }; }
             else { mfeet = new Dictionary<string, MFoot>(); foreach (var s in new[] { "L", "R" }) mfeet[s] = new MFoot { pos = ankles[s], yaw = YawOf(WQ(j[s + "foot"])) }; }
             if (n != "idle") willPlay?.Invoke(n);
-            name = n; time = 0; blend = 0; buffered = false; impacted = false; airLift = 0;
+            name = n; time = 0; blend = 0; buffered = false; impacted = false; airLift = 0; arcScale = 1; rootScale = 1;
             startYaw = pendingYaw ?? RootYaw; pendingYaw = null;
             yawOffset = Sim.Mod(RootYaw - startYaw + Mathf.PI, Mathf.PI * 2) - Mathf.PI; prevTipL = null;
             velocity = Vector3.zero; speed = 0;
@@ -204,7 +213,7 @@ namespace Soul
         {
             var m = move; float previous = time; time = Mathf.Min(time + dt, m.duration);
             if (name == "heavyCharge") charge = Mathf.Min(1, time / m.duration);
-            float distance = (RootAt(m, time) - RootAt(m, previous)) * speedScale;
+            float distance = (RootAt(m, time) - RootAt(m, previous)) * speedScale * rootScale;
             ch.root.position += Sim.ApplyAxisAngle(new Vector3(0, 0, distance), up, startYaw);
             if (m.yaw != null) RootYaw = startYaw + CurveAt(m.yaw, time) * rad + yawOffset * (1 - Sim.Smooth(Mathf.Min(1, time / .14f)));
             else { float dy = Sim.Mod(startYaw - RootYaw + Mathf.PI, Mathf.PI * 2) - Mathf.PI; RootYaw += dy * Sim.Damp(26, dt); }
@@ -217,7 +226,7 @@ namespace Soul
                 pose[n] = Sim.Normalize(new Quaternion(Sim.Hermite(a.x, b.x, c.x, d.x, t), Sim.Hermite(a.y, b.y, c.y, d.y, t), Sim.Hermite(a.z, b.z, c.z, d.z, t), Sim.Hermite(a.w, b.w, c.w, d.w, t)));
             }
             body = new Vector3(Sim.Hermite(k0.body.x, k1.body.x, k2.body.x, k3.body.x, t), Sim.Hermite(k0.body.y, k1.body.y, k2.body.y, k3.body.y, t), Sim.Hermite(k0.body.z, k1.body.z, k2.body.z, k3.body.z, t));
-            if (m.arc != null) { float t0 = m.arc[0], t1 = m.arc[1], h = m.arc[2]; if (time > t0 && time < t1) { float s = (time - t0) / (t1 - t0); body.y += h * 4 * s * (1 - s); } }
+            if (m.arc != null) { float t0 = m.arc[0], t1 = m.arc[1], h = m.arc[2]; if (time > t0 && time < t1) { float s = (time - t0) / (t1 - t0); body.y += h * arcScale * 4 * s * (1 - s); } }
             // mounted a higher ledge mid-jump: the root was raised by airLift; fade the offset out by landing
             if (airLift > 0 && time < airLiftT1) body.y -= airLift * (airLiftT1 - time) / Mathf.Max(1e-3f, airLiftT1 - airLiftT0);
             if (!impacted && m.Has(m.impact) && time >= m.impact) { impacted = true; impact?.Invoke(name, m, charge); }

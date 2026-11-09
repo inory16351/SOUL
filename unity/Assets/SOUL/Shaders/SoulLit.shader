@@ -11,6 +11,7 @@ Shader "SOUL/Lit"
         _Smoothness ("Smoothness", Range(0,1)) = 0.2
         _UseVertexColor ("Use Vertex Color", Float) = 1
         _Cutaway ("Top-down cutaway (world props)", Float) = 0
+        _CutCap ("Ground cut: squash shelves above head height down to it (dark cut top)", Float) = 0
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
     }
     SubShader
@@ -26,10 +27,11 @@ Shader "SOUL/Lit"
             float _UseVertexColor;
             float _Cull;
             float _Cutaway;
+            float _CutCap;
         CBUFFER_END
         // top-down cutaway: geometry above the player's head near the player is dithered out
         float4 _SoulCutCenter;   // xyz = player feet (world), w = radius
-        float4 _SoulCutParams;   // x = height above feet where cutting starts, y = fade width
+        float4 _SoulCutParams;   // x = height above feet where cutting starts, y = fade width, zw = direction feet -> camera (world xz, unit; 0 = any side)
         // fog clears around the player (RegionAtmosphere sets it): the play area stays crisp, distance stays hazy
         float4 _SoulFogClear;    // xyz = player (world), w = clear radius (0 = off)
         half3 SoulMixFog(half3 c, float fogFactor, float3 positionWS)
@@ -52,6 +54,29 @@ Shader "SOUL/Lit"
             half inner = saturate(1 - (_SoulHeal.y - d) / 60) * (1 - outside);   // fresh green just behind the front
             return c * (1 + inner * half3(-.05, .25, -.05)) + half3(.6, 1.1, .7) * band * band * 2.4;
         }
+        // how strongly world point p is inside the cut zone (radius around the camera-side centre, camera side only)
+        float SoulCutZone(float3 p)
+        {
+            if (_SoulCutCenter.w <= 0) return 0;
+            float d = length(p.xz - _SoulCutCenter.xz);
+            float z = saturate((_SoulCutCenter.w - d) / max(.001, _SoulCutParams.y));
+            float2 camDir = _SoulCutParams.zw;
+            if (dot(camDir, camDir) > .25) z *= saturate((dot(p.xz - (_SoulCutCenter.xz - camDir * 3), camDir) + 1.5) / 1.5);
+            return z;
+        }
+        // ground (a height field: a hole would open onto nothing): inside the cut zone, terrain above head height is
+        // pressed down to head height instead of clipped, like a roof sliced off. Returns the new position; cap = 0..1
+        float3 SoulCutSquash(float3 p, out float cap)
+        {
+            cap = 0;
+            if (_CutCap < .5) return p;
+            float top = _SoulCutCenter.y + _SoulCutParams.x, above = p.y - top;
+            if (above <= 0) return p;
+            float z = SoulCutZone(p);
+            cap = z * saturate(above / .6);
+            p.y = lerp(p.y, top, z);
+            return p;
+        }
         void SoulCutaway(float3 positionWS, float4 positionCS)
         {
             if (_Cutaway < .5 || _SoulCutCenter.w <= 0) return;
@@ -59,6 +84,13 @@ Shader "SOUL/Lit"
             if (above <= 0) return;
             float d = length(positionWS.xz - _SoulCutCenter.xz);
             float fade = saturate((_SoulCutCenter.w - d) / max(.001, _SoulCutParams.y)) * saturate(above / .35);
+            // only between the camera and the player: geometry behind the player (a cliff it stands against) stays whole
+            float2 camDir = _SoulCutParams.zw;
+            if (dot(camDir, camDir) > .25)
+            {
+                float2 feet = _SoulCutCenter.xz - camDir * 3;
+                fade *= saturate((dot(positionWS.xz - feet, camDir) + 1.5) / 1.5);
+            }
             static const float bayer[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
             uint2 px = (uint2)positionCS.xy % 4;
             clip((bayer[px.y * 4 + px.x] + .5) / 16 - fade);
@@ -87,16 +119,19 @@ Shader "SOUL/Lit"
             Varyings vert (Attributes v)
             {
                 Varyings o;
-                VertexPositionInputs p = GetVertexPositionInputs(v.positionOS.xyz);
-                o.positionCS = p.positionCS; o.positionWS = p.positionWS;
+                float cap;
+                float3 ws = SoulCutSquash(TransformObjectToWorld(v.positionOS.xyz), cap);
+                o.positionWS = ws; o.positionCS = TransformWorldToHClip(ws);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
-                o.color = lerp(float4(1,1,1,1), v.color, _UseVertexColor);
-                o.fogFactor = ComputeFogFactor(p.positionCS.z);
+                o.color = lerp(float4(1,1,1,1), v.color, _UseVertexColor); o.color.a = cap;
+                o.fogFactor = ComputeFogFactor(o.positionCS.z);
                 return o;
             }
             half4 frag (Varyings i, bool front : SV_IsFrontFace) : SV_Target
             {
                 SoulCutaway(i.positionWS, i.positionCS);
+                // cut-open terrain: the ground is a height field with nothing beneath, so where the cutaway removes a
+                // shelf the camera sees the ground's underside: draw it as dark packed earth (a cross-section)
                 float3 n = normalize(i.normalWS); n = front ? n : -n;
                 InputData d = (InputData)0;
                 d.positionWS = i.positionWS; d.normalWS = n;
@@ -107,6 +142,7 @@ Shader "SOUL/Lit"
                 d.shadowMask = half4(1,1,1,1);
                 SurfaceData s = (SurfaceData)0;
                 s.albedo = _BaseColor.rgb * i.color.rgb; s.metallic = _Metallic; s.smoothness = _Smoothness;
+                if (_CutCap > .5) s.albedo = lerp(s.albedo, half3(.05, .042, .036), saturate(i.color.a) * .85);   // sliced-off top reads dark
                 s.occlusion = 1; s.alpha = 1; s.emission = _EmissionColor.rgb;
                 half4 c = UniversalFragmentPBR(d, s);
                 c.rgb = SoulHealWave(c.rgb, i.positionWS);
@@ -157,7 +193,7 @@ Shader "SOUL/Lit"
             #pragma vertex vert
             #pragma fragment frag
             struct V2 { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; };
-            V2 vert (float4 positionOS : POSITION) { V2 o; o.positionWS = TransformObjectToWorld(positionOS.xyz); o.positionCS = TransformWorldToHClip(o.positionWS); return o; }
+            V2 vert (float4 positionOS : POSITION) { V2 o; float cap; o.positionWS = SoulCutSquash(TransformObjectToWorld(positionOS.xyz), cap); o.positionCS = TransformWorldToHClip(o.positionWS); return o; }
             half frag (V2 i) : SV_Target { SoulCutaway(i.positionWS, i.positionCS); return 0; }
             ENDHLSL
         }
@@ -171,7 +207,7 @@ Shader "SOUL/Lit"
             #pragma fragment frag
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; };
             struct Varyings { float4 positionCS : SV_POSITION; float3 normalWS : TEXCOORD0; };
-            Varyings vert (Attributes v) { Varyings o; o.positionCS = TransformObjectToHClip(v.positionOS.xyz); o.normalWS = TransformObjectToWorldNormal(v.normalOS); return o; }
+            Varyings vert (Attributes v) { Varyings o; float cap; o.positionCS = TransformWorldToHClip(SoulCutSquash(TransformObjectToWorld(v.positionOS.xyz), cap)); o.normalWS = TransformObjectToWorldNormal(v.normalOS); return o; }
             half4 frag (Varyings i) : SV_Target { return half4(normalize(i.normalWS), 0); }
             ENDHLSL
         }

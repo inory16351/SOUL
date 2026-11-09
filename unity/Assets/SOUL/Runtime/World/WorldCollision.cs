@@ -190,29 +190,45 @@ namespace Soul
         /// steepest walkable terrain grade (rise / run ≈ 45°); steeper terrain is a wall going up
         public const float SLOPE = 1f, SLOPE_PROBE = .5f;
         /// steep bare terrain ahead of (x, z) in direction (dx, dz) (unit) that rises above the feet: cliffs and
-        /// over-steep slopes block walking up (players and enemies, jumping too); walking down is a drop
-        public static bool TerrainWall(float x, float z, float dx, float dz, float footY)
+        /// over-steep slopes block walking up (players and enemies); walking down is a drop. A jump arc whose
+        /// clearance (`climb` above STEP) tops the face mounts it (2026-11-09: double jump onto low shelves)
+        public static bool TerrainWall(float x, float z, float dx, float dz, float footY, float climb = 0)
         {
             if (!Terrain.enabled || (dx == 0 && dz == 0)) return false;
             float ax = x + dx * SLOPE_PROBE, az = z + dz * SLOPE_PROBE, ha = Terrain.Height(ax, az);
             if (ha <= footY + .05f) return false;
+            if (climb > STEP + .01f)
+            {   // jumping: the face may be entered only if the arc clears its top (sampled 0.5..3 m ahead), so a jump
+                // never stops halfway up a cliff
+                float top = ha; for (float r = 1; r <= 3; r += .5f) top = Mathf.Max(top, Terrain.Height(x + dx * r, z + dz * r));
+                if (top <= footY + climb) return false;
+            }
             // the face's full gradient (not the rise along the move): sliding or zig-zagging can't climb it
             const float E = .35f;
             float gx = (Terrain.Height(ax + E, az) - Terrain.Height(ax - E, az)) / (2 * E), gz = (Terrain.Height(ax, az + E) - Terrain.Height(ax, az - E)) / (2 * E);
             float g = Mathf.Sqrt(gx * gx + gz * gz);
             return g > SLOPE && (dx * gx + dz * gz) > .2f * g && ha - Terrain.Height(x, z) > .02f;
         }
+        /// bare terrain under (x, z) steeper than SLOPE: unit downhill direction (characters left on a cliff face slide off)
+        public static bool SteepAt(float x, float z, out Vector2 down)
+        {
+            down = Vector2.zero; if (!Terrain.enabled) return false;
+            const float E = .35f;
+            float gx = (Terrain.Height(x + E, z) - Terrain.Height(x - E, z)) / (2 * E), gz = (Terrain.Height(x, z + E) - Terrain.Height(x, z - E)) / (2 * E);
+            float g = Mathf.Sqrt(gx * gx + gz * gz); if (g <= SLOPE * 1.15f) return false;
+            down = new Vector2(-gx, -gz) / g; return true;
+        }
         public static Vector3 Move(Vector3 from, Vector3 to, float radius, float climb)
         {
             var p = to; p.y = from.y; Resolve(ref p, radius);
             var d = new Vector2(p.x - from.x, p.z - from.z); float len = d.magnitude;
             Vector2 dir = len > 1e-5f ? d / len : Vector2.zero, lead = dir * radius * .7f;   // probe slightly ahead of the centre
-            bool Blocked(Vector3 q) => Ledge(q.x, q.z, from.y, climb) || (len > 1e-5f && (Ledge(q.x + lead.x, q.z + lead.y, from.y, climb) || TerrainWall(q.x, q.z, dir.x, dir.y, from.y)));
+            bool Blocked(Vector3 q) => Ledge(q.x, q.z, from.y, climb) || (len > 1e-5f && (Ledge(q.x + lead.x, q.z + lead.y, from.y, climb) || TerrainWall(q.x, q.z, dir.x, dir.y, from.y, climb)));
             if (!Blocked(p)) return p;
             // blocked by a ledge / cliff: try sliding along each axis
             float sx = Mathf.Sign(p.x - from.x), sz = Mathf.Sign(p.z - from.z);
-            var a = new Vector3(p.x, from.y, from.z); if (!Ledge(a.x, a.z, from.y, climb) && !TerrainWall(a.x, a.z, sx, 0, from.y)) { Resolve(ref a, radius); return a; }
-            var b = new Vector3(from.x, from.y, p.z); if (!Ledge(b.x, b.z, from.y, climb) && !TerrainWall(b.x, b.z, 0, sz, from.y)) { Resolve(ref b, radius); return b; }
+            var a = new Vector3(p.x, from.y, from.z); if (!Ledge(a.x, a.z, from.y, climb) && !TerrainWall(a.x, a.z, sx, 0, from.y, climb)) { Resolve(ref a, radius); return a; }
+            var b = new Vector3(from.x, from.y, p.z); if (!Ledge(b.x, b.z, from.y, climb) && !TerrainWall(b.x, b.z, 0, sz, from.y, climb)) { Resolve(ref b, radius); return b; }
             return new Vector3(from.x, from.y, from.z);
         }
     }

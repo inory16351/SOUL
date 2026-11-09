@@ -149,6 +149,8 @@ namespace Soul
         public string name; public float rangeMin, rangeMax, cooldown, windup; public string kind;
         public float width, length, radius, angle;            // telegraph opts
         public float damage, dash, dashTime = -1, recover; public bool atTarget;
+        /// follow-up casts of the same attack at the player's new spot (slam combo); each with a 0.6 s wind-up
+        public int repeat;
         public bool HasDash => dash > 0;
     }
     public class EnemyType
@@ -157,11 +159,25 @@ namespace Soul
         public float size = 1;          // model scale (radius / height follow)
         public string bossName;         // non-null = boss: screen HP bar instead of the floating one
         public int soul = 16;
+        /// scrap pieces dropped on a kill (Pickups.Burst)
+        public int scrap = 4;
+        /// eye / core glow override (null = the model's own)
+        public Color? eye;
+        /// chest core glow override (executor: dark, its front is armour; the weak spot is on its back)
+        public Color? core;
+        /// field sight radius while roaming (SoulGame.Ecology); 0 = never notices on its own (only when hit)
+        public float sight = 11;
+        /// elite (맵 엘리트): name shown on the elite bar while fighting; permanent kill
+        public string eliteName;
+        /// model rig to animate as ("crawler" rig for hound-likes); defaults to the type key
+        public string rig;
+        /// four-legged dog on the hound rig: legs swing under the body (no insect splay), diagonal trot
+        public bool quad;
         /// boss ranged set (used beyond Enemy.BOSS_NEAR, 50 / 50): energy bolt + charge
         public EnemyAttack[] far;
         public static readonly Dictionary<string, EnemyType> TYPES = new Dictionary<string, EnemyType>
         {
-            { "crawler", new EnemyType { prefab = "Prefabs/Crawler", hp = 60, speed = 3.3f, turn = 7, keep = 1.1f, poise = 0, attacks = new[] {
+            { "crawler", new EnemyType { prefab = "Prefabs/Crawler", scrap = 2, hp = 60, speed = 3.3f, turn = 7, keep = 1.1f, poise = 0, attacks = new[] {
                 new EnemyAttack { name = "lunge", rangeMin = 2.5f, rangeMax = 6.5f, cooldown = 2.6f, windup = .75f, kind = "line", width = 1.3f, length = 5.2f, damage = 14, dash = 5.0f, dashTime = .22f, recover = .7f },
                 new EnemyAttack { name = "bite", rangeMin = 0, rangeMax = 2.2f, cooldown = 1.6f, windup = .55f, kind = "cone", radius = 2.1f, angle = 1.3f, damage = 10, recover = .55f },
             } } },
@@ -170,6 +186,30 @@ namespace Soul
                 new EnemyAttack { name = "slam", rangeMin = 2.5f, rangeMax = 7, cooldown = 4.5f, windup = 1.15f, kind = "circle", radius = 2.5f, damage = 30, recover = 1.0f, atTarget = true },
                 new EnemyAttack { name = "thrust", rangeMin = 3, rangeMax = 7.5f, cooldown = 3.8f, windup = .85f, kind = "line", width = 1.4f, length = 6.5f, damage = 24, recover = .9f },
             }, soul = 34 } },
+            // ---- Z0 field roster (기획서/Z0_생태계_엘리트_파츠.md, 2026-11-09): placeholder looks = existing rigs scaled / tinted (Codex 16) ----
+            // 재 진드기: small swarm biters around ash mounds
+            { "ashMite", new EnemyType { prefab = "Prefabs/AshMite", rig = "crawler", hp = 22, speed = 3.8f, turn = 9, keep = .7f, poise = 0, size = .55f, soul = 6, scrap = 1, sight = 7, eye = new Color(2.2f, 1.9f, .3f, 1), attacks = new[] {
+                new EnemyAttack { name = "bite", rangeMin = 0, rangeMax = 1.4f, cooldown = 1.3f, windup = .45f, kind = "cone", radius = 1.4f, angle = 1.4f, damage = 6, recover = .45f },
+                new EnemyAttack { name = "lunge", rangeMin = 1.6f, rangeMax = 3.6f, cooldown = 2.4f, windup = .55f, kind = "line", width = .8f, length = 3, damage = 7, dash = 2.8f, dashTime = .18f, recover = .5f },
+            } } },
+            // 녹슨 파수꾼: a rooted turret (never walks), long sight, shots and lobbed shells
+            { "sentry", new EnemyType { prefab = "Prefabs/Sentry", rig = "warden", hp = 160, speed = 0, turn = 2.6f, keep = 99, poise = 40, size = .85f, soul = 20, scrap = 3, sight = 17, eye = new Color(2.6f, 2.0f, .25f, 1), attacks = new[] {
+                new EnemyAttack { name = "shot", rangeMin = 2.5f, rangeMax = 13, cooldown = 3.2f, windup = 1.1f, kind = "line", width = .9f, length = 13, damage = 16, recover = .8f },
+                new EnemyAttack { name = "shell", rangeMin = 5, rangeMax = 16, cooldown = 5.5f, windup = 1.5f, kind = "circle", radius = 2.4f, damage = 20, recover = 1.0f, atTarget = true },
+                new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 2.6f, cooldown = 3, windup = .8f, kind = "cone", radius = 2.8f, angle = 2.4f, damage = 14, recover = .8f },
+            } } },
+            // elite 무리의 우두머리: a giant hound leading a pack; drops the leg upgrade 도약 관절
+            { "houndAlpha", new EnemyType { prefab = "Prefabs/HoundAlpha", rig = "crawler", quad = true, hp = 720, speed = 4.4f, turn = 3.6f, keep = 4.2f, poise = 160, size = 5f, soul = 40, scrap = 4, sight = 15, eliteName = "무리의 우두머리", eye = new Color(3, .5f, .15f, 1), attacks = new[] {
+                new EnemyAttack { name = "lunge", rangeMin = 7, rangeMax = 20, cooldown = 3.6f, windup = 1.05f, kind = "line", width = 5f, length = 19f, damage = 28, dash = 15, dashTime = .42f, recover = 1.0f },
+                new EnemyAttack { name = "bite", rangeMin = 0, rangeMax = 8, cooldown = 2.4f, windup = .85f, kind = "cone", radius = 8.5f, angle = 1.4f, damage = 24, recover = .85f },
+                new EnemyAttack { name = "howl", rangeMin = 0, rangeMax = 11, cooldown = 9, windup = 1.4f, kind = "circle", radius = 11f, damage = 20, recover = 1.2f },
+            } } },
+            // elite 부서진 집행자: a giant broken warden with a slam combo; drops the ranged skill 레이저 파동
+            { "executor", new EnemyType { prefab = "Prefabs/Executor", rig = "warden", hp = 1050, speed = 1.85f, turn = 1.05f, keep = 3.6f, poise = 200, size = 2.4f, soul = 50, scrap = 6, sight = 13, eliteName = "부서진 집행자", eye = new Color(.75f, .2f, 1.25f, 1), core = new Color(.05f, .04f, .06f, 1), attacks = new[] {
+                new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 7.6f, cooldown = 3.2f, windup = 1.1f, kind = "cone", radius = 8.6f, angle = 2.5f, damage = 30, recover = 1.0f },
+                new EnemyAttack { name = "slam", rangeMin = 5, rangeMax = 14, cooldown = 6, windup = 1.3f, kind = "circle", radius = 5f, damage = 34, recover = 1.05f, atTarget = true, repeat = 2 },
+                new EnemyAttack { name = "thrust", rangeMin = 6, rangeMax = 15, cooldown = 4, windup = 1.0f, kind = "line", width = 3.1f, length = 14f, damage = 30, recover = 1.0f },
+            } } },
             // Z0 boss: lies dormant until the fight, then attacks on a global 5 s clock (melee near, bolt / charge far).
             // No tear-off (뜯기) here: the rope arm is not owned yet in Z0, so the gimmick is the energy pillars (BossPillars).
             { "ashWarden", new EnemyType { prefab = "Prefabs/AshWarden", hp = 900, speed = 1.5f, turn = 2.4f, keep = 1.6f, poise = 150, size = 1.35f, bossName = "재의 감시자", soul = 80, far = new[] {
@@ -220,6 +260,30 @@ namespace Soul
         float wakeTime = 1, curl, rollSpin;
         readonly List<int> farBag = new List<int>();   // far attacks: 2 throws + 2 rolls per shuffled bag
         public readonly Dictionary<string, int> picks = new Dictionary<string, int>();   // attack counts (tests)
+        // ---- field life (SoulGame.Ecology, 2026-11-09): territory members roam / hunt until they notice the player, and
+        // walk home (healing) when led too far out of their territory ----
+        public object territory; public int member = -1; public Vector3 home;
+        /// roam: where to walk (Ecology moves it: wander points, a fleeing critter); roamFast = hunting pace
+        public Vector3? roamTarget; public bool roamFast;
+        int repeatLeft;
+        /// elite gimmicks (SoulGame.Elites): scales each hit (amount, attacker position) -> multiplier
+        public System.Func<float, Vector3, float> hitScale;
+        /// wind-up time multiplier (enraged elites attack faster)
+        public float windupScale = 1;
+        public Transform Root => go.transform;
+        /// 특이 개체 (SoulGame.Field): bigger, tougher, harder-hitting field member
+        public bool special; public float sizeMul = 1; float hpMul = 1;
+        public float MaxHp => def.hp * hpMul;
+        public void MakeSpecial() { special = true; sizeMul = 1.3f; hpMul = 2.2f; hp = MaxHp; hpFrac = 1; radius *= 1.3f; height *= 1.3f; eyeTint = new Color(2.6f, .3f, 1.5f, 1); WriteRoot(); }
+        public SoulModel Model => model;
+        /// own model in use (not the scaled stand-in)
+        public bool custom;
+        /// core glow multiplier (elite gimmicks: an exposed core flares)
+        public float coreBoost = 1;
+        /// fighting the player (not roaming, returning, asleep or dead)
+        public bool Engaged => alive && state != "roam" && state != "return" && state != "dormant" && state != "spawn" && state != "wake" && state != "down";
+        public void Engage() { if (state == "roam" || state == "return") { state = "chase"; t = 0; } }
+        public void ReturnHome() { if (!IsBoss && alive && state != "roam" && state != "return") { ClearTele(); state = "return"; t = 0; } }
         public bool Hittable => alive && state != "spawn" && state != "dormant" && state != "wake" && state != "down";
         // parts
         readonly Part body, head, jaw, torso, pelvisP; readonly Transform eyeT, coreT;
@@ -231,10 +295,16 @@ namespace Soul
         readonly bool beast; readonly Part chestP, neckP, armSh, armEl, armWr; readonly Part[] spine, tail, fingers;
         static readonly Color SOUL = new Color(3, .75f, .3f, 1);
 
+        /// hound rig (crawler, ash mite, pack alpha): light, flinches, crawler animation
+        public readonly bool hound;
         public Enemy(EnemyManager mgr, string type, Vector3 p, bool quiet = false)
         {
             this.mgr = mgr; this.type = type; def = EnemyType.TYPES[type];
-            go = Object.Instantiate(Resources.Load<GameObject>(def.prefab), mgr.parent); go.name = type;
+            // own model (Codex 17) when its prefab exists, else the rig's base model scaled / tinted
+            var pf = Resources.Load<GameObject>(def.prefab); custom = pf != null && def.rig != null;
+            if (pf == null) pf = Resources.Load<GameObject>(def.rig == "crawler" ? "Prefabs/Crawler" : "Prefabs/Warden");
+            go = Object.Instantiate(pf, mgr.parent); go.name = type;
+            hound = (def.rig ?? type) == "crawler";
             model = go.GetComponent<SoulModel>(); radius = model.radius * def.size; height = model.height * def.size;
             pos = p; floorY = p.y; yaw = Random.value * Mathf.PI * 2; hp = def.hp; walk = Random.value * 10;
             body = Part.Of(model, "body"); head = Part.Of(model, "head"); jaw = Part.Of(model, "jaw"); torso = Part.Of(model, "torso"); pelvisP = Part.Of(model, "pelvis");
@@ -242,8 +312,10 @@ namespace Soul
             eyeColor = SOUL; coreColor = SOUL;
             if (eyeT && eyeT.TryGetComponent<MeshRenderer>(out var er)) { eyeMat = er.material; eyeColor = Mats.GetColor(eyeMat); }
             if (coreT && coreT.TryGetComponent<MeshRenderer>(out var cr)) { coreMat = cr.material; coreColor = Mats.GetColor(coreMat); }
+            if (def.eye.HasValue) { eyeColor = def.eye.Value; coreColor = def.eye.Value * .8f; }
+            if (def.core.HasValue && !custom) coreColor = def.core.Value;   // stand-in body only (the own model places its core itself)
             beast = model.Part("arm/shoulder") != null;
-            if (type == "crawler" || beast)
+            if (hound || beast)
             {
                 int n = model.Count("legs");
                 for (int i = 0; i < n; i++) legs.Add(new Leg { hip = Part.Of(model, $"legs/{i}/hip"), knee = Part.Of(model, $"legs/{i}/knee"), ankle = Part.Of(model, $"legs/{i}/ankle"), index = (int)model.Num($"legs/{i}/index"), side = model.Num($"legs/{i}/side") });
@@ -255,7 +327,7 @@ namespace Soul
                 armSh = Part.Of(model, "arm/shoulder"); armEl = Part.Of(model, "arm/elbow"); armWr = Part.Of(model, "arm/wrist");
                 spine = Chain("spine"); tail = Chain("tail"); fingers = Chain("arm/fingers");
             }
-            else if (type != "crawler")
+            else if (!hound)
             {
                 Leg L(string k) => model.Part(k + "/hip") ? new Leg { hip = Part.Of(model, k + "/hip"), knee = Part.Of(model, k + "/knee"), ankle = Part.Of(model, k + "/ankle") } : null;
                 Arm A(string k) => model.Part(k + "/shoulder") ? new Arm { shoulder = Part.Of(model, k + "/shoulder"), elbow = Part.Of(model, k + "/elbow") } : null;
@@ -270,22 +342,37 @@ namespace Soul
         public bool Damage(float amount, Vector3 from, bool heavy = false)
         {
             if (!Hittable) return false;
-            hp -= amount; flash = 1; hpFrac = hp / def.hp;
+            if (state == "roam" || state == "return") { state = "chase"; t = 0; }
+            mgr.onAggro?.Invoke(this);
+            if (hitScale != null) amount *= hitScale(amount, from);
+            if (!Hittable) return true;   // a gimmick reaction (stagger) may have changed the state
+            hp -= amount; flash = 1; hpFrac = hp / MaxHp;
             var away = Sim.Norm(Sim.FlatY(pos - from));
-            velocity += away * (type == "crawler" ? 4 : 1.2f);
+            velocity += away * (hound ? (def.eliteName != null ? 1.5f : 4) : 1.2f);
             poiseDmg += amount;
             if (hp <= 0)
             {
                 if (IsBoss && phase == 1) { hp = 0; hpFrac = 0; KnockDown(); return true; }   // BossPillars takes it to phase 2
                 Die(); return true;
             }
-            // light machines flinch out of wind-ups; the warden only breaks when its poise is exhausted
-            if ((type == "crawler" && (heavy || Random.value < .35f)) || (def.poise > 0 && poiseDmg >= def.poise)) { poiseDmg = 0; ToStagger(heavy ? .9f : .45f); }
+            // hit reaction (2026-11-09, user: "monsters must flinch too, or nothing can be answered"):
+            //  field monsters flinch on every hit (cancels the wind-up), longer when their poise breaks;
+            //  elites / bosses keep their poise: they only break when it is exhausted
+            bool big = def.eliteName != null || IsBoss;
+            if (!big)
+            {
+                float st = heavy ? .7f : hound ? .42f : .3f;
+                if (def.poise > 0 && poiseDmg >= def.poise) { poiseDmg = 0; st = heavy ? 1.2f : .9f; }
+                Flinch(st);
+            }
+            else if (def.poise > 0 && poiseDmg >= def.poise) { poiseDmg = 0; Flinch(heavy ? .9f : .6f); }
             return true;
         }
         /// remove without a kill (lost boss fight): no soul burst, no onKill; gone next update
         public void Despawn() { ClearTele(); state = "dead"; t = 99; }
         public void ToStagger(float time) { if (!Hittable) return; ClearTele(); state = "stagger"; t = 0; staggerTime = time; }
+        /// a hit reaction that never shortens a longer stagger already running (an elite kneeling, pinned, stunned)
+        public void Flinch(float time) { if (state == "stagger" && staggerTime - t >= time) return; ToStagger(time); }
         /// boss: lying switched off (no attacks, no hits, no HP bar) until Wake
         public void Dormant() { ClearTele(); state = "dormant"; t = 0; scale = 1; liePose = 1; velocity = Vector3.zero; }
         /// stand up over `time` seconds, then fight (first attack 2.5 s later)
@@ -293,7 +380,7 @@ namespace Soul
         /// phase 1 knockout: falls over and stays down until Revive
         public void KnockDown() { ClearTele(); state = "down"; t = 0; velocity = Vector3.zero; }
         public void Revive(float frac, float time) { phase = 2; hp = def.hp * frac; hpFrac = frac; Wake(time); }
-        public void Heal(float amount) { hp = Mathf.Min(def.hp, hp + amount); hpFrac = hp / def.hp; }
+        public void Heal(float amount) { hp = Mathf.Min(MaxHp, hp + amount); hpFrac = hp / MaxHp; }
         void ClearTele() { if (tele != null) { tele.Dispose(); tele = null; } }
         public void Die()
         {
@@ -353,6 +440,21 @@ namespace Soul
                 }
                 else if (dist > def.keep + radius) move = def.speed * Mathf.Min(1, (dist - def.keep - radius) / 1.2f + .3f);
             }
+            else if (state == "roam")
+            {
+                if (roamTarget.HasValue)
+                {
+                    var d = Sim.FlatY(roamTarget.Value - pos); float L = d.magnitude;
+                    if (L > .8f) { TurnTo(Mathf.Atan2(d.x, d.z), def.turn * .7f); move = def.speed * (roamFast ? .95f : .32f) * Mathf.Min(1, L / 1.5f + .3f); }
+                }
+            }
+            else if (state == "return")
+            {
+                var d = Sim.FlatY(home - pos); float L = d.magnitude;
+                hp = Mathf.Min(MaxHp, hp + MaxHp * .2f * dt); hpFrac = hp / MaxHp;
+                if (L < 2 || t > 15) { if (L >= 2) pos = home; state = "roam"; t = 0; hp = MaxHp; hpFrac = 1; roamTarget = null; }   // stuck for 15 s: home anyway
+                else { TurnTo(Mathf.Atan2(d.x, d.z), def.turn); move = def.speed * .8f; }
+            }
             else if (state == "spawn")
             {
                 scale = Mathf.Min(1, .01f + t * 1.6f); if (t > .65f) { scale = 1; state = "chase"; t = 0; }
@@ -367,9 +469,9 @@ namespace Soul
                 if (options.Count > 0 && !mgr.passive && t > .35f && player.alive && sameLevel && Mathf.Abs(AngleTo(yaw, yawToP)) < .5f)
                 {
                     var a = options[Random.Range(0, options.Count)];
-                    attack = a; state = "windup"; t = 0;
+                    attack = a; state = "windup"; t = 0; repeatLeft = a.repeat;
                     var origin = a.atTarget ? player.pos : pos + Sim.Forward(yaw) * (a.kind == "line" ? radius * .6f : .1f);
-                    tele = new Telegraph(mgr.parent, a.kind, origin, yaw, a, a.windup);
+                    tele = new Telegraph(mgr.parent, a.kind, origin, yaw, a, a.windup * windupScale);
                 }
                 else if (dist > def.keep + radius) move = def.speed * Mathf.Min(1, (dist - def.keep - radius) / 1.2f + .3f);
             }
@@ -394,7 +496,15 @@ namespace Soul
                     float E(float x) => 1 - Mathf.Pow(1 - Mathf.Min(1, x), 3);
                     float k = E(t / a.dashTime) - E((t - dt) / a.dashTime); pos += dashDir * (a.dash * k * Terrain.Slow(pos.x, pos.z));
                 }
-                if (t > (a.dashTime >= 0 ? a.dashTime : .18f)) { state = "recover"; t = 0; }
+                if (t > (a.dashTime >= 0 ? a.dashTime : .18f))
+                {
+                    if (repeatLeft > 0 && player.alive && !mgr.passive)
+                    {   // combo: the same attack again where the player stands now, shorter wind-up
+                        repeatLeft--; state = "windup"; t = 0; TurnTo(yawToP, 99);
+                        tele = new Telegraph(mgr.parent, a.kind, a.atTarget ? player.pos : pos + Sim.Forward(yaw) * (a.kind == "line" ? radius * .6f : .1f), yaw, a, .6f);
+                    }
+                    else { state = "recover"; t = 0; if (a.repeat > 0) mgr.onComboEnd?.Invoke(this); }
+                }
             }
             else if (state == "recover") { pose = "recover"; if (t > attack.recover) { state = "chase"; t = 0; } }
             else if (state == "stagger") { pose = "stagger"; if (t > staggerTime) { state = "chase"; t = 0; } }
@@ -428,7 +538,7 @@ namespace Soul
                 if (NavGrid.Floor(ahead.x, ahead.z, start.y) >= start.y - NavGrid.DROP) pos += stepV;
             }
             move = curSpeed;
-            walk += dt * (move > 0 ? move * (type == "crawler" ? 3.2f : 1.6f) : .4f);
+            walk += dt * (move > 0 ? move * (hound ? 3.2f / def.size : 1.6f / def.size) : .4f);
             // keep inside the arena
             // keep inside the world; walls and ledges (machines cannot jump: only steps / ramps)
             if (Sim.FlatY(pos).magnitude > mgr.bounds) { var fl2 = Sim.SetLength(Sim.FlatY(pos), mgr.bounds); pos.x = fl2.x; pos.z = fl2.z; }
@@ -445,8 +555,8 @@ namespace Soul
             flash = Mathf.Max(0, flash - dt * 6);
             float on = .04f + .96f * (1 - liePose);   // switched-off machine: eyes / core nearly dark
             if (eyeMat) { var c = Color.Lerp((eyeTint ?? eyeColor) * (on * (1 + flare)), new Color(4, 4, 4, 1), flash); c.a = 1; Mats.SetColor(eyeMat, c); }
-            if (coreMat) { var c = (eyeTint.HasValue ? eyeTint.Value * .6f : coreColor) * (on * (.9f + .25f * Mathf.Sin(t * 6) + flare * .6f)); c.a = 1; Mats.SetColor(coreMat, c); }
-            if (alive && liePose < .5f && Random.value < dt * (type != "crawler" ? 6 * def.size : 2.5f)) mgr.Wisp(CoreWorld(), .5f);
+            if (coreMat) { var c = (eyeTint.HasValue ? eyeTint.Value * .6f : coreColor) * (on * (.9f + .25f * Mathf.Sin(t * 6) + flare * .6f) * coreBoost); c.a = 1; Mats.SetColor(coreMat, c); }
+            if (alive && liePose < .5f && Random.value < dt * (!hound ? 6 * def.size : 2.5f)) mgr.Wisp(CoreWorld(), .5f);
             return true;
         }
         void WriteRoot()
@@ -457,12 +567,12 @@ namespace Soul
                 float h = height * .5f * curl; var q = Sim.AxisAngle(Vector3.up, yaw) * Sim.AxisAngle(Vector3.right, rotX + rollSpin);
                 var off = new Vector3(0, h, 0) - Sim.Rotate(q, new Vector3(0, h, 0));
                 tr.localPosition = Sim.ToUnity(pos + off); tr.localRotation = Sim.ToUnity(q);
-                tr.localScale = Vector3.one * scale * def.size * (1 - .25f * curl);
+                tr.localScale = Vector3.one * scale * def.size * sizeMul * (1 - .25f * curl);
                 return;
             }
             tr.localPosition = Sim.ToUnity(pos);
             tr.localRotation = Sim.ToUnity(Sim.EulerXYZ(rotX, yaw, rotZ));
-            tr.localScale = Vector3.one * scale * def.size;
+            tr.localScale = Vector3.one * scale * def.size * sizeMul;
         }
         // Scrap beast: heavy 3-leg lizard crawl (legs 120 deg apart in phase, the spine S-curves, footfalls thump), the fourth
         // leg grotesquely twisted and hauled up over the back: its knee is the high point and the shin / foot hang from it,
@@ -544,13 +654,25 @@ namespace Soul
         {
             float w = walk; float S(float x) => Mathf.Sin(x);
             float wind = pose == "windup" ? Mathf.Min(1, t / attack.windup) : 0;
-            if (type == "crawler")
+            if (hound)
             {
                 float gait = move > 0 ? 1 : .15f;
                 for (int i = 0; i < legs.Count; i++)
                 {
                     var L = legs[i]; if (L.hip == null) continue;
                     float ph = w * 2 + (i % 2 == 1 ? Mathf.PI : 0) + L.index * .5f;
+                    if (def.quad)
+                    {   // dog trot (legs ordered FL, FR, RR, RL): swing under the body, wrists / hocks fold on the lift
+                        float lift = Mathf.Max(0, S(ph + 1)) * gait;
+                        L.hip.rot.x = S(ph) * .42f * gait - wind * (L.index == 0 ? .35f : -.2f); L.hip.rot.z = L.side * .03f; L.hip.Apply();
+                        // three-joint canine leg (rot.x > 0 swings a hanging segment backward):
+                        //  fore: elbow folds the forearm back, the wrist folds the paw back hard on the lift
+                        //  hind: the stifle swings the shin forward, the hock folds the long metatarsus back
+                        bool fore = L.index == 0;
+                        if (L.knee != null) { L.knee.rot.x = fore ? lift * .6f + wind * .2f : -lift * .5f - wind * .3f; L.knee.Apply(); }
+                        if (L.ankle != null) { L.ankle.rot.x = fore ? lift * .95f : lift * .8f + wind * .2f; L.ankle.Apply(); }
+                        continue;
+                    }
                     L.hip.rot.x = S(ph) * .55f * gait; L.hip.rot.z = L.side * (.25f + Mathf.Max(0, Mathf.Cos(ph)) * .35f * gait + wind * .3f); L.hip.Apply();
                     if (L.knee != null) { L.knee.rot.x = -.4f - Mathf.Max(0, S(ph + 1)) * .5f * gait - wind * .3f; L.knee.Apply(); }
                 }
@@ -608,6 +730,10 @@ namespace Soul
     public class EnemyManager
     {
         public readonly Transform parent; public readonly Vfx vfx; public readonly float bounds;
+        /// an enemy was hit (Ecology: wakes its pack)
+        public System.Action<Enemy> onAggro;
+        /// the last hit of a repeat combo landed (executor: its arm sticks in the ground)
+        public System.Action<Enemy> onComboEnd;
         public System.Action<float, Vector3, Enemy> onPlayerHit; public System.Action<Vector3, float> onStep; public System.Action<Enemy, EnemyAttack, Vector3> onImpact; public System.Action<Enemy> onKill;
         public List<Enemy> list = new List<Enemy>();
         // Nothing spawns on its own: monsters are summoned. passive = they follow and take hits but
@@ -635,6 +761,12 @@ namespace Soul
         {
             var p = Sim.FlatY(pos); p.y = WorldCollision.Floor(p.x, p.z, pos.y, .6f);
             var e = new Enemy(this, type, p, true) { yaw = yaw }; e.Dormant(); list.Add(e); return e;
+        }
+        /// a territory member placed out of sight: no flash, no soul burst, already roaming
+        public Enemy SpawnQuiet(string type, Vector3 pos, float yaw)
+        {
+            var p = Sim.FlatY(pos); p.y = WorldCollision.Floor(p.x, p.z, pos.y + 2, 3);
+            var e = new Enemy(this, type, p, true) { yaw = yaw, state = "roam", scale = 1, home = p }; list.Add(e); return e;
         }
         // summon at an exact spot (clamped to the arena)
         public Enemy SpawnAt(string type, Vector3 pos)
@@ -752,7 +884,7 @@ namespace Soul
             var right = cam.transform.right;
             foreach (var e in list)
             {
-                if (!e.alive || e.def.bossName != null) continue;
+                if (!e.alive || e.def.bossName != null || e.def.eliteName != null || (!e.Engaged && e.hpFrac >= 1)) continue;
                 var w = Sim.ToUnity(e.pos + Vector3.up * (e.height * e.scale + .45f));
                 Vector3 a = cam.WorldToScreenPoint(w - right * .55f * e.scale), b = cam.WorldToScreenPoint(w + right * .55f * e.scale), c = cam.WorldToScreenPoint(w);
                 if (c.z <= 0) continue;

@@ -159,9 +159,11 @@ namespace Soul
         }
         void RestAtPod()
         {
+            if (NearMerchant() && fightArena == null) { OpenShop(); return; }   // 숨은 상인 (SoulGame.Field)
             var sh = NearShrine(5); if (sh != null && player.alive && fightArena == null) { Resonate(sh); return; }
             var pod = NearPod(4.2f); if (pod == null || !player.alive || fightArena != null) return;
             pod.found = true; restPod = pod; player.hp = player.max;
+            RespawnField();   // field monsters come back (elites stay dead)
             vfx.Ring(Sim.FlatY(pod.pos, .5f), 1.6f, true); vfx.Flash(Sim.FlatY(pod.pos, 1.4f), 1);
             Cue($"충전 완료 · {pod.name} 에 저장됨", 2);
         }
@@ -216,6 +218,7 @@ namespace Soul
         // ---------- map / GUI ----------
         void MapClick(Rect r, Vector2 mp)
         {
+            if (PinHovered(r, mp)) { mapPin = null; return; }   // left-click on the hovered pin removes it too
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             foreach (var pod in ZoneAreas.Pods)
             {
@@ -305,7 +308,7 @@ namespace Soul
                 }
             }
             GUI.color = Color.white;
-            GUI.Label(new Rect(22, 64, 190, 20), $"기본 부품 {scrap}", small);
+            GUI.Label(new Rect(22, 64, 420, 20), $"기본 부품 {scrap}   ·   붉은 조각 {shards}   ·   수리 키트 {kits} (X)", small);
             if (debugHud) GUI.Label(new Rect(20, 122, 520, 20), $"표정 {ZoneState.Count}/{PixelFace.ORDER.Length}   ·   K 정화 토글   ·   Shift+클릭 지도 순간이동", small);
         }
     }

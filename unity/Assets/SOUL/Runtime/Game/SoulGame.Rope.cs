@@ -25,9 +25,9 @@ namespace Soul
 
         void RopeInit()
         {
-            pickups = new Pickups(scene.pickups) { onCollect = it => { GainScrap(it.amount); vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
+            pickups = new Pickups(scene.pickups) { onCollect = it => { if (it.kind == "shard") shards += it.amount; else GainScrap(it.amount); vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
             var prevKill = enemies.onKill;
-            enemies.onKill = e => { prevKill?.Invoke(e); pickups.Burst(e.Center(), e.def.bossName != null ? 10 : e.type == "crawler" ? 2 : 4); };
+            enemies.onKill = e => { prevKill?.Invoke(e); pickups.Burst(e.Center(), e.def.bossName != null ? 10 : e.def.scrap); };
             var cg = scene.ropeCable;
             cable = cg.GetComponent<LineRenderer>(); cable.positionCount = 2; cable.useWorldSpace = true; cable.widthMultiplier = .035f;
             cable.sharedMaterial = Mats.Unlit(new Color(.16f, .14f, .12f, 1), Blend.Opaque); cable.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; cable.enabled = false;

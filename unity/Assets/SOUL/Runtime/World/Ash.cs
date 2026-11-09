@@ -14,6 +14,8 @@ namespace Soul
         readonly Mesh mesh; readonly Material mat; float time; Vector3 center;
         /// 0 = grey ash, 1 = purified zone: warm glowing pollen / fireflies drifting up (eased)
         public float bloom; float b;
+        /// extra drift (sim XZ, m/s): SoulGame.Guide leans the ash toward the zone's boss (경로 유도, subtle)
+        public Vector3 wind; Vector3 w;
         uint seed = 4207;
         float Rand() { seed = seed * 1664525u + 1013904223u; return seed / 4294967296f; }
 
@@ -42,15 +44,15 @@ namespace Soul
         {
             float step = float.IsFinite(dt) ? Mathf.Clamp(dt, 0, .1f) : 0;
             time += step; b = Mathf.MoveTowards(b, bloom, step * .35f);
-            float fallK = 1 - 1.35f * b;
+            float fallK = 1 - 1.35f * b; w = Vector3.MoveTowards(w, wind, step * .15f);
             Mats.SetColor(mat, Color.Lerp(new Color(1, 1, 1, .52f), new Color(2.6f, 2.3f, 1.1f, .85f), b));
             if (float.IsFinite(c.x) && float.IsFinite(c.z)) center = new Vector3(c.x, float.IsFinite(c.y) ? c.y : 0, c.z);
             for (int i = 0; i < COUNT; i++)
             {
                 var p = pos[i]; float ph = phase[i];
-                p.x = center.x - 19 + Wrap(p.x + (.09f + Mathf.Sin(time * .6f + ph) * .13f) * step - center.x + 19, 38);
+                p.x = center.x - 19 + Wrap(p.x + (.09f + Mathf.Sin(time * .6f + ph) * .13f + w.x) * step - center.x + 19, 38);
                 p.y = center.y + Wrap(p.y - fall[i] * fallK * step - center.y, 13);
-                p.z = center.z - 19 + Wrap(p.z + Mathf.Cos(time * .4f + ph) * .1f * step - center.z + 19, 38);
+                p.z = center.z - 19 + Wrap(p.z + (Mathf.Cos(time * .4f + ph) * .1f + w.z) * step - center.z + 19, 38);
                 pos[i] = p;
             }
             var cam = Camera.main;

@@ -22,7 +22,7 @@ namespace Soul
     {
         public const int WATER_NONE = 0, WATER_CLEAN = 1, WATER_MIRE = 2, WATER_TOXIC = 3, WATER_OIL = 4;
         const float CHUNK = 32; const int N = 32;
-        class Tile { public float[] h, surf, depth, wet, tox; public byte[] type; }
+        class Tile { public float[] h, surf, depth, wet, tox, basin; public byte[] type; }
         static readonly Dictionary<Vector2Int, Tile> tiles = new Dictionary<Vector2Int, Tile>();
         public static bool enabled = true;
 
@@ -99,29 +99,64 @@ namespace Soul
         /// a flattening mask: `pad` ones level to their own base height (structure plots, landmarks: a rotated
         /// rectangle / circle), the others to 0 (pods, arenas, chasms, gate corridors)
         struct Flat { public Vector2 c, half; public float r, fall, cos, sin, baseH; public bool pad; }
+        /// distance from a pad's flat top (0 on it). The top is the footprint (rounded rectangle) grown by an
+        /// irregular 0..5 m (noise; never shrunk past the 1.5 m apron), so no straight plateau edge shows (2026-11-09)
         static float FlatDist(in Flat f, Vector2 p)
         {
-            var d = p - f.c; if (!f.pad || f.half.x <= 0) return d.magnitude;
-            float lx = Mathf.Abs(d.x * f.cos - d.y * f.sin) - f.half.x, lz = Mathf.Abs(d.x * f.sin + d.y * f.cos) - f.half.y;
-            return new Vector2(Mathf.Max(lx, 0), Mathf.Max(lz, 0)).magnitude;
+            var d = p - f.c; if (!f.pad || f.half.x <= 0) return Organic(d.magnitude, f.r, p);
+            float rr = Mathf.Min(3, .35f * Mathf.Min(f.half.x, f.half.y));
+            float lx = Mathf.Abs(d.x * f.cos - d.y * f.sin) - (f.half.x - rr), lz = Mathf.Abs(d.x * f.sin + d.y * f.cos) - (f.half.y - rr);
+            float sd = new Vector2(Mathf.Max(lx, 0), Mathf.Max(lz, 0)).magnitude - rr;
+            float grow = Mathf.Lerp(-1.4f, 5, .5f + .5f * S(p.x, p.y, .06f, 3.9f));
+            return Mathf.Max(0, sd - grow);
         }
+        /// an authored flat of radius r: the edge wanders ±25 % of the distance outside it (no perfect circles)
+        static float Organic(float d, float r, Vector2 p) => d <= r ? d : r + (d - r) * (1 + .3f * S(p.x, p.y, .045f, 6.3f));
         /// 0-level mask at p (1 = untouched)
         static float ZeroMask(List<Flat> flats, float x, float z)
         {
             float F = 1; var p = new Vector2(x, z);
-            if (Mathf.Abs(x) < 42 + 30 && Mathf.Abs(z) < 42 + 30) F = Sim.SmoothStep(Mathf.Max(Mathf.Abs(x), Mathf.Abs(z)), 42, 72);   // original arena
-            foreach (var f in flats) { if (f.pad) continue; float d = (p - f.c).magnitude; if (d < f.r + f.fall) F = Mathf.Min(F, Sim.SmoothStep(d, f.r, f.r + f.fall)); }
+            if (Mathf.Abs(x) < 42 + 40 && Mathf.Abs(z) < 42 + 40)
+            {   // original arena: a rounded square whose fall-off edge wanders (was max(|x|,|z|): ruler-straight sides)
+                float ax = Mathf.Max(Mathf.Abs(x) - 30, 0), az = Mathf.Max(Mathf.Abs(z) - 30, 0), d = 30 + new Vector2(ax, az).magnitude;
+                F = Sim.SmoothStep(Organic(d, 42, p), 42, 72);
+            }
+            foreach (var f in flats) { if (f.pad) continue; float d = Organic((p - f.c).magnitude, f.r, p); if (d < f.r + f.fall) F = Mathf.Min(F, Sim.SmoothStep(d, f.r, f.r + f.fall)); }
             return F;
         }
         /// trail closeness on a 4 m lattice per chunk (ZoneRoutes.Dist is too dear per 1 m vertex)
         static float[] TrailLattice(float x0, float z0)
         {
             var a = new float[9 * 9];
-            for (int i = 0; i <= 8; i++) for (int j = 0; j <= 8; j++) a[i * 9 + j] = TrailW(ZoneRoutes.Dist(x0 + i * 4, z0 + j * 4));
+            for (int i = 0; i <= 8; i++) for (int j = 0; j <= 8; j++) a[i * 9 + j] = TrailW(ZoneRoutes.Dist(x0 + i * 4, z0 + j * 4), x0 + i * 4, z0 + j * 4);
             return a;
         }
-        /// 1 on and beside a trail .. 0 from 12 m (ZoneRoutes.Dist is only exact within ~12.6 m: buckets hold nearer segments)
-        static float TrailW(float dist) => 1 - Sim.SmoothStep(dist, 5, 12);
+        /// 1 on and beside a trail .. 0 from 5-12 m (ZoneRoutes.Dist is only exact within ~12.6 m: buckets hold nearer
+        /// segments). The band edge wanders with noise so the cut through the shelves isn't ruler-straight along the
+        /// string-pulled trail segments (2026-11-09); the trail itself (< 3.5 m) always stays cliff-free.
+        static float TrailW(float dist, float x, float z)
+        {
+            float w = S(x, z, .05f, 8.8f);
+            return 1 - Sim.SmoothStep(dist, 3.5f + 1.5f * (w + 1), 8 + 2 * (w + 1));   // outer edge ≤ 12 m (Dist's exact range)
+        }
+        /// 0..1 per 4 m lattice point: 1 on flat or hollow ground, 0 on slopes (> ~0.2 grade over 4 m), shelf edges
+        /// and crowns (higher than the ground around). Raw relief (no pads / flats: water is masked off those anyway).
+        static float[] BasinLattice(float x0, float z0, float[] trails)
+        {
+            var a = new float[9 * 9];
+            for (int i = 0; i <= 8; i++) for (int j = 0; j <= 8; j++)
+            {
+                float x = x0 + i * 4, z = z0 + j * 4, tw = trails[i * 9 + j], c = Relief(x, z, tw), sum = 0, steep = 0;
+                for (int k = 0; k < 6; k++)
+                {
+                    float an = k * Mathf.PI / 3, n = Relief(x + 4 * Mathf.Cos(an), z + 4 * Mathf.Sin(an), tw);
+                    sum += n; steep = Mathf.Max(steep, Mathf.Abs(n - c) / 4);
+                }
+                float concave = sum / 6 - c;
+                a[i * 9 + j] = (1 - Sim.SmoothStep(steep, .07f, .2f)) * Sim.SmoothStep(concave, -.2f, -.02f);
+            }
+            return a;
+        }
         static Tile Build(Vector2Int k)
         {
             var t = Begin(k, out var flats, out var trails); Rows(k, t, flats, trails, 0, N + 1); return t;
@@ -157,8 +192,26 @@ namespace Soul
                     if (!f.pad) continue; float d = FlatDist(f, p); if (d >= f.r + f.fall) continue;
                     float w = Sim.SmoothStep(d, f.r, f.r + f.fall); relief = Mathf.Lerp(f.baseH, relief, w); F = Mathf.Min(F, w);
                 }
+                // cache mesas (Caches.Spots): a flat top `rise` above the ground, 0.9 m cliff band with a wandering edge
+                for (int mi = 0; mi < Caches.Spots.Length; mi++)
+                {
+                    var m = Caches.Spots[mi]; float d = (p - m.c).magnitude; if (d > m.r + 4) continue;
+                    if (float.IsNaN(mesaBase[mi])) mesaBase[mi] = Relief(m.c.x, m.c.y);
+                    float edge = m.r * (1 + .12f * S(x, z, .35f, 2.2f + mi));
+                    float top = mesaBase[mi] + m.rise, mk = 1 - Sim.SmoothStep(d, edge, edge + .9f);
+                    relief = Mathf.Max(relief, Mathf.Lerp(relief, top, mk)); F = Mathf.Min(F, Sim.SmoothStep(d, edge, edge + 3));
+                }
                 float wf = Sim.SmoothStep(F, .55f, .9f);
-                float depth = WaterRaw(x, z, out byte ty, out float wet) * wf; t.wet[idx] = wet * wf;
+                float depth = WaterRaw(x, z, out byte ty, out float wet) * wf;
+                // water only settles where the ground holds it: flat or hollow, never draped over a slope or a shelf
+                // edge (2026-11-09: puddles were placed by noise alone and climbed hills)
+                if (depth > 0 || wet > 0)
+                {
+                    t.basin ??= BasinLattice(x0, z0, trails);
+                    float b = Mathf.Lerp(Mathf.Lerp(t.basin[ti * 9 + tj], t.basin[(ti + 1) * 9 + tj], fx), Mathf.Lerp(t.basin[ti * 9 + tj + 1], t.basin[(ti + 1) * 9 + tj + 1], fx), fz);
+                    depth *= b; wet *= Mathf.Sqrt(b);
+                }
+                t.wet[idx] = wet * wf;
                 // toxic sludge is a continuous weight (no cell-sized seams); trails fade it out so they stay wadable
                 // without the core, over 6..13 m instead of a hard 9 m cut (that cut drew straight lines along trails)
                 float tox = 0;
@@ -190,6 +243,8 @@ namespace Soul
             return l;
         }
         static readonly Dictionary<Vector2, float> padBase = new Dictionary<Vector2, float>();
+        static readonly float[] mesaBase = NaNs(Caches.Spots.Length);
+        static float[] NaNs(int n) { var a = new float[n]; for (int i = 0; i < n; i++) a[i] = float.NaN; return a; }
         /// a structure pad: flat over its footprint (half > 0: rotated rectangle, else a circle of radius r) at the
         /// terrain height of its centre (with the 0-level masks applied, never the other pads: no recursion)
         static void AddPad(List<Flat> l, Vector2 c, float reach, Vector2 p, Vector2 half, float yaw, float r, float fall)
@@ -198,7 +253,7 @@ namespace Soul
             if ((p - c).magnitude > ext + fall + reach) return;
             if (!padBase.TryGetValue(p, out float b))
             {
-                b = Relief(p.x, p.y, TrailW(ZoneRoutes.Dist(p.x, p.y))) * ZeroMask(Flats(p.x, p.y, 0, false), p.x, p.y);
+                b = Relief(p.x, p.y, TrailW(ZoneRoutes.Dist(p.x, p.y), p.x, p.y)) * ZeroMask(Flats(p.x, p.y, 0, false), p.x, p.y);
                 padBase[p] = b;
             }
             l.Add(new Flat { c = p, half = half, r = half.x > 0 ? 0 : r, fall = fall, cos = Mathf.Cos(yaw), sin = Mathf.Sin(yaw), baseH = b, pad = true });
@@ -218,7 +273,9 @@ namespace Soul
         /// step apart); each cell's x / z transition is a retaining wall (1.4 m wide: a cliff) or a 12 m ramp
         static float LabTerrace(float x, float z, float soft)
         {
-            const float C = 24, STEP = 2.5f; float gx = x / C, gz = z / C; int ix = Mathf.FloorToInt(gx), iz = Mathf.FloorToInt(gz);
+            const float C = 24, STEP = 2.5f;
+            float wx = x + 5 * S(x, z, .013f, 4.6f), wz = z + 5 * S(x, z, .013f, 9.2f);   // gentle bends (2026-11-09)
+            float gx = wx / C, gz = wz / C; int ix = Mathf.FloorToInt(gx), iz = Mathf.FloorToInt(gz);
             float L(int a, int b) => Mathf.Clamp(Mathf.Round(20 * (P(a * C, b * C, .006f, 7.7f) - .5f) / STEP), -3, 3) * STEP;
             float Edge(float f, bool ramp) => ramp ? Sim.SmoothStep(f, .22f, .78f) : Sim.SmoothStep(f, .47f, .53f);
             float tx = Mathf.Lerp(Edge(gx - ix, Hash(ix, iz, 78) < .35f), Edge(gx - ix, true), soft);
@@ -243,7 +300,7 @@ namespace Soul
                 case 0:   // ruin mounds and shelves: 2.4 m steps of a broad rolling field
                 {
                     float b = 6.5f * S(x, z, .0055f, 3.1f) + 2.2f * S(x, z, .02f, 8.7f);
-                    r = Shelf(Terrace(b, 2.4f, .1f), b, x, z, trail, 1.1f) + .25f * S(x, z, .09f, 4.4f); break;
+                    r = Shelf(Terrace(b, 2.1f, .1f), b, x, z, trail, 1.1f) + .2f * S(x, z, .09f, 4.4f); break;
                 }
                 case 1:   // fallen city: flat streets, sunken ground collapsing in 3 m steps (to ~-9 m)
                 {
@@ -269,7 +326,7 @@ namespace Soul
                 case 5:   // root knolls on 2.3 m shelves, steep-walled gullies
                 {
                     float knoll = 7.5f * SS(P(x, z, .014f, 5.9f), .45f, .85f), R = Ridged(x, z, .012f, 3.7f);
-                    r = Shelf(Terrace(knoll, 2.3f, .14f) - 4.5f * SS(R, .86f, .97f), .5f * knoll - 1.5f * SS(R, .7f, 1), x, z, trail, 6.6f)
+                    r = Shelf(Terrace(knoll, 2.0f, .14f) - 4.5f * SS(R, .86f, .97f), .5f * knoll - 1.5f * SS(R, .7f, 1), x, z, trail, 6.6f)
                         + .35f * S(x, z, .12f, 6.2f); break;
                 }
                 case 6:   // low basin (water sits in it): hummocks with 1.1 m peat banks
@@ -282,7 +339,7 @@ namespace Soul
             return Mathf.Clamp(r, -10, 10);
         }
         /// unflattened relief with zone blending at borders (used by the map; Build passes its trail lattice)
-        public static float Relief(float x, float z) => Relief(x, z, TrailW(ZoneRoutes.Dist(x, z)));
+        public static float Relief(float x, float z) => Relief(x, z, TrailW(ZoneRoutes.Dist(x, z), x, z));
         public static float Relief(float x, float z, float trail)
         {
             int self = ZoneWorld.Sample(x, z, out int other, out float d);

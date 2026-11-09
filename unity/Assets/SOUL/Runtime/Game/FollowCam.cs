@@ -11,8 +11,15 @@ namespace Soul
         /// view yaw around the player (0 = north-up). T snaps it behind the character and it stays there (SnapYaw).
         public float yaw, targetYaw; bool snapNext;
         /// turn the view to `y` instantly (no swing), position included
-        public void SnapYaw(float y) { yaw = targetYaw = y; snapNext = true; }
-        Vector3 target = new Vector3(0, 1, 0), position = new Vector3(0, 11, 8);
+        public void SnapYaw(float y) { yaw = targetYaw = y; turnT = 1; snapNext = true; }
+        /// swing the view to `y` smoothly (T key): ease-in-out over 0.35-0.6 s by angle (2026-11-09: was a snap)
+        public void TurnTo(float y)
+        {
+            turnFrom = yaw; turnDelta = Sim.WrapPi(y - yaw); targetYaw = y; turnT = 0;
+            turnDur = .4f + .35f * Mathf.Abs(turnDelta) / Mathf.PI;   // 180 deg in 0.75 s
+        }
+        float turnFrom, turnDelta, turnT = 1, turnDur = .5f;
+        Vector3 target = new Vector3(0, 1, 0), position = new Vector3(0, 11, 8), lastGoal = new Vector3(0, 11, 8);
         float shakeAmount, clock;
         public FollowCam(Camera cam) { camera = cam; camera.fieldOfView = 38; camera.nearClipPlane = .1f; camera.farClipPlane = 140; }
         public bool Toggle() { side = !side; return side; }
@@ -34,14 +41,27 @@ namespace Soul
         /// boss fight framing: set fightTarget 1 (0 to release) and fightFocus = boss position (sim) every frame;
         /// the camera eases out by fightZoom and centres between player and boss
         public float fightTarget, fightZoom = .75f; public Vector3 fightFocus; float fight;
+        /// explore framing (경로 유도 A, SoulGame.Guide): 0..1, pulls out 30 % and shifts the view centre by exploreLead (sim)
+        public float explore; public Vector3 exploreLead; Vector3 leadNow;
         public void Update(float dt, Vector3 simPos)
         {
             clock += dt; float aspect = camera.aspect;
             var offset = side ? new Vector3(8.8f, 2.5f, .25f) : new Vector3(0, 10.2f, 7.0f) * zoom;
             if (aspect < 1.2f) offset *= 1.2f;
-            yaw += Sim.WrapPi(targetYaw - yaw) * (1 - Mathf.Exp(-dt * 6));
+            if (turnT < 1)
+            {
+                turnT = Mathf.Min(1, turnT + dt / turnDur); float e = turnT * turnT * turnT * (turnT * (turnT * 6 - 15) + 10);   // smootherstep
+                yaw = Sim.WrapPi(turnFrom + turnDelta * e);
+            }
+            else yaw += Sim.WrapPi(targetYaw - yaw) * (1 - Mathf.Exp(-dt * 6));
             if (!side) offset = Sim.ApplyAxisAngle(offset, Vector3.up, yaw);
             var tgt = simPos + new Vector3(0, .8f, 0);
+            if (!side)
+            {
+                float ek = explore * explore * (3 - 2 * explore);
+                leadNow = Vector3.Lerp(leadNow, exploreLead * ek, 1 - Mathf.Exp(-dt * 1.6f));
+                offset *= 1 + .3f * ek; tgt += leadNow;
+            }
             // boss framing: pull out and centre between player and boss so the whole beast stays in frame
             fight = Mathf.MoveTowards(fight, fightTarget, dt * .8f);
             if (fight > 0 && !side)
@@ -62,8 +82,10 @@ namespace Soul
             }
             else camera.farClipPlane = 140;
             target = Vector3.LerpUnclamped(target, tgt, 1 - Mathf.Exp(-dt * 8));
+            // follow lag is kept relative to the goal, so a T swing rides the orbit instead of cutting the chord
             if (snapNext) { target = tgt; position = posGoal; snapNext = false; }
-            else position = Vector3.LerpUnclamped(position, posGoal, 1 - Mathf.Exp(-dt * 7));
+            else position = posGoal + (position - lastGoal) * Mathf.Exp(-dt * 7);
+            lastGoal = posGoal;
             shakeAmount *= Mathf.Exp(-dt * 17);
             var p = position; p.x += Mathf.Sin(clock * 103) * shakeAmount; p.y += Mathf.Sin(clock * 137) * shakeAmount * .6f;
             camera.transform.position = Sim.ToUnity(p);

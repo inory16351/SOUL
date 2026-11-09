@@ -21,7 +21,7 @@ namespace Soul
             vistaSil = Mats.Unlit(Color.white, Blend.Opaque, false, UnityEngine.Rendering.CullMode.Off, true, false);
             vistaMpb = new MaterialPropertyBlock();
             vistaRoot = new GameObject("vista markers").transform; vistaRoot.SetParent(transform, false);
-            var marker = Vistas.Marker(); var mat = Mats.Lit(Color.white, Color.black, .12f, .12f, true);
+            var marker = Vistas.Marker(); var mat = Mats.Lit(Color.white, Color.black, .12f, .12f, true); mat.SetFloat("_Cutaway", 1);
             foreach (var v in Vistas.All)
             {
                 if (v.shrine) continue;   // the shrine is its own landmark
@@ -36,7 +36,7 @@ namespace Soul
         {
             if (fightArena != null || !player.alive) return false;
             var p = ch.root.position;
-            foreach (var e in enemies.list) if (e.alive && Sim.FlatY(e.pos - p).magnitude < 22) return false;
+            foreach (var e in enemies.list) if (e.Engaged && Sim.FlatY(e.pos - p).magnitude < 22) return false;   // roaming field monsters don't count
             return true;
         }
 

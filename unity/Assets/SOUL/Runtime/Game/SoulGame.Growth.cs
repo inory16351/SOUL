@@ -32,6 +32,7 @@ namespace Soul
             {
                 if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Q)) growthTab = 0;
                 if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.E)) growthTab = 1;
+                if (Input.GetKeyDown(KeyCode.Alpha3)) growthTab = 2;
             }
             return was || growthOpen;
         }
@@ -64,7 +65,7 @@ namespace Soul
         // ---------- effects ----------
         void GrowthApply(float dt)
         {
-            float want = Growth.MaxHp;
+            float want = Growth.MaxHp + (perkPlating ? 20 : 0);   // + 덧댄 장갑판 (merchant)
             if (!Mathf.Approximately(player.max, want))
             {
                 float d = want - player.max; player.max = want;
@@ -82,7 +83,7 @@ namespace Soul
                 float k = kv.Key.StartsWith("light") ? Growth.ReachScale : kv.Key == "heavy" ? 1 + Skills.Perk("whirl", Skills.PerkKind.Range) : kv.Key == "flurry" ? 1 + Skills.Perk("storm", Skills.PerkKind.Range) : 1;
                 AREA[kv.Key] = (kv.Value.r * k, kv.Value.a);
             }
-            COOLDOWN[KeyCode.Space] = cdBase[KeyCode.Space] * Growth.DashCdScale;
+            COOLDOWN[KeyCode.Space] = cdBase[KeyCode.Space] * Growth.DashCdScale * (perkCoil ? .85f : 1);   // 냉각 코일 (merchant)
             if (dt <= 0) return;
             // 광역 스캐너: wider fog reveal (ZoneUpdate keeps revealing the base 46 m)
             if ((growthFogT -= dt) <= 0) { growthFogT = .25f; if (Growth.FogScale > 1) MapFog.Reveal(ch.root.position, 46 * Growth.FogScale); }
@@ -228,8 +229,8 @@ namespace Soul
             // header + tabs
             GUI.color = new Color(.75f, .95f, 1);
             GUI.Label(new Rect(x + pad + 8, y + pad - 4, 200, 30), "성장", new GUIStyle(gTitle) { fontSize = 21 });
-            string[] tabs = { "노드 트리", "스킬 파츠" };
-            for (int i = 0; i < 2; i++)
+            string[] tabs = { "노드 트리", "스킬 파츠", "기록" };
+            for (int i = 0; i < 3; i++)
             {
                 var tr = new Rect(x + pad + 90 + i * 140, y + pad - 6, 132, 34);
                 Piece(tr, growthTab == i ? P_TAB_ON : P_TAB, 60, 24, growthTab == i ? new Color(.3f, .7f, 1f, .9f) : new Color(.15f, .2f, .25f, .9f));
@@ -237,10 +238,10 @@ namespace Soul
                 if (ev.type == EventType.MouseDown && ev.button == 0 && tr.Contains(ev.mousePosition)) { growthTab = i; ev.Use(); }
             }
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + pad + 380, y + pad - 2, w - 2 * pad - 390, 24),
+            GUI.Label(new Rect(x + pad + 520, y + pad - 2, w - 2 * pad - 530, 24),
                 $"경험치 {Growth.xp}   ·   포인트 {Growth.Points}   ·   지갑 기본 부품 {scrap}   ·   {KeyBinds.Name(KeyBinds.Act.Growth)} / Esc 닫기", new GUIStyle(gNumRight) { fontSize = 13 });
             var body = new Rect(x + pad, y + pad + 36, w - 2 * pad, h - 2 * pad - 36);
-            if (growthTab == 0) TreeTab(body, ev); else PartsTab(body, ev);
+            if (growthTab == 0) TreeTab(body, ev); else if (growthTab == 1) PartsTab(body, ev); else RecordsTab(body, ev);
             GUI.color = Color.white;
         }
 

@@ -24,7 +24,7 @@ namespace Soul
         {
             root = sceneRoot;
             propMat = Mats.Lit(Color.white, Color.black, .12f, .12f, true); propMat.SetFloat("_Cutaway", 1);
-            groundMat = Mats.Lit(Color.white, Color.black, 0, .05f, true);
+            groundMat = Mats.Lit(Color.white, Color.black, 0, .05f, true); groundMat.SetFloat("_CutCap", 1);   // shelves above the player on the camera side are squashed to head height (a sliced dark top), not clipped: a height field has nothing below to show
             ridgeMat = Mats.Lit(Color.white, Color.black, 0, .06f, true); ridgeMat.SetFloat("_Cutaway", 1);
             WorldCollision.chunkSize = CHUNK; WorldCollision.Clear();
         }

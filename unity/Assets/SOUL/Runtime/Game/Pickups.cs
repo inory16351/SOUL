@@ -14,7 +14,7 @@ namespace Soul
         }
         public readonly List<Item> items = new List<Item>();
         public System.Action<Item> onCollect;
-        readonly Transform parent; readonly Mesh mesh; readonly Material mat;
+        readonly Transform parent; readonly Mesh mesh; readonly Material mat; Material shardMat;
         public const float COLLECT_R = 1.3f;
 
         public Pickups(Transform parent)
@@ -22,22 +22,23 @@ namespace Soul
             this.parent = parent;
             mesh = ZoneProps.Scrap();
             mat = Mats.Unlit(new Color(1.6f, 1.35f, .8f, 1), Blend.Opaque, true);
+            shardMat = Mats.Unlit(new Color(2.6f, .35f, .25f, 1), Blend.Opaque, true);   // 붉은 조각
         }
 
         public Item Spawn(string kind, Vector3 pos, int amount = 1, Vector3 vel = default)
         {
             var it = new Item { kind = kind, amount = amount, pos = pos, vel = vel };
             it.go = new GameObject("pickup " + kind); it.go.transform.SetParent(parent, false);
-            it.go.AddComponent<MeshFilter>().sharedMesh = mesh; it.go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+            it.go.AddComponent<MeshFilter>().sharedMesh = mesh; it.go.AddComponent<MeshRenderer>().sharedMaterial = kind == "shard" ? shardMat : mat;
             items.Add(it); return it;
         }
         /// scatter `n` scrap pieces popping out of a destroyed machine
-        public void Burst(Vector3 at, int n)
+        public void Burst(Vector3 at, int n, int amount = 1)
         {
             for (int i = 0; i < n; i++)
             {
                 float a = Random.value * Mathf.PI * 2, s = 1.5f + Random.value * 2;
-                Spawn("scrap", at + new Vector3(0, .6f, 0), 1, new Vector3(Mathf.Sin(a) * s, 4 + Random.value * 2, Mathf.Cos(a) * s));
+                Spawn("scrap", at + new Vector3(0, .6f, 0), amount, new Vector3(Mathf.Sin(a) * s, 4 + Random.value * 2, Mathf.Cos(a) * s));
             }
         }
         public Item Nearest(Vector3 p, float within)

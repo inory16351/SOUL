@@ -2,7 +2,7 @@
 
 You are modeling for the Unity 6 port of SOUL (working title ALONE): a top-down (~55° pitch) soulslike
 on a ruined Earth. All geometry is generated in C# with the project's `MeshBuilder` (no external assets).
-Repository root: `D:\pro\SOUL`. Unity project: `unity/`. Runtime code: `unity/Assets/SOUL/Runtime/`.
+Repository root: `C:\Project\SOUL`. Unity project: `unity/`. Runtime code: `unity/Assets/SOUL/Runtime/`.
 
 ## Read first (do not edit)
 - `unity/HANDOFF_UNITY.md` §3 "sim space" and the file map; §0 stages 2–4 for what these models are for.

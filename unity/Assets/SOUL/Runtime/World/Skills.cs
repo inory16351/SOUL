@@ -24,12 +24,12 @@ namespace Soul
             new SkillDef { id = "overload", name = "코어 과부하", part = "뒤틀린 에너지 코어",   cooldown = 45, icon = UiArt.CORE, desc = "체력 회복 · 이동 속도 증가 · 받는 피해 증가" },
         };
         /// draft sources: skill shrine (공명 기둥) of each zone; grudge parts by zone
-        public static readonly string[] ShrineSkill = { "counter", "whirl", "wave", "storm", null, null, null, null };
+        public static readonly string[] ShrineSkill = { "counter", "whirl", null, "storm", null, null, null, null };   // wave moved to the Z0 elite (2026-11-09); Z2 shrine: new skill TBD
         public static readonly string[] GrudgeSkill = { "overload", null, null, null, null, null, null, null };
         /// keys the game already uses (or reserves for debug): never offered for binding
         public static readonly HashSet<KeyCode> Reserved = new HashSet<KeyCode>
         {
-            KeyCode.A, KeyCode.Space, KeyCode.F, KeyCode.M, KeyCode.G, KeyCode.T, KeyCode.V, KeyCode.C, KeyCode.P, KeyCode.H, KeyCode.K,
+            KeyCode.A, KeyCode.Space, KeyCode.F, KeyCode.M, KeyCode.G, KeyCode.T, KeyCode.V, KeyCode.C, KeyCode.P, KeyCode.H, KeyCode.K, KeyCode.X,
             KeyCode.Tab, KeyCode.Escape, KeyCode.Return, KeyCode.Period, KeyCode.LeftShift, KeyCode.RightShift, KeyCode.LeftControl,
             KeyCode.RightControl, KeyCode.LeftAlt, KeyCode.RightAlt, KeyCode.LeftWindows, KeyCode.RightWindows,
             KeyCode.Alpha0, KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9,

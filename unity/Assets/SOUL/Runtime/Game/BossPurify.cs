@@ -138,6 +138,7 @@ namespace Soul
             purifyT = -1; waveT = -1; timeScale = 1; cam.fightTarget = 0; cam.fightZoom = FIGHT_ZOOM;
             Shader.SetGlobalVector(HealId, Vector4.zero);
             foreach (var m in motes) m.go.SetActive(false);
+            StoryBeat();   // main story: the beat for this many purified zones (SoulGame.Lore)
         }
 
         // ---------- hatred motes: red → white, swirl round the core then rise ----------

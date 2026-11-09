@@ -104,6 +104,7 @@ namespace Soul
         }
         void OnPlayerHit(float dmg, Vector3 from, Enemy enemy)
         {
+            if (enemy != null && enemy.special) dmg *= 1.3f;   // 특이 개체 hit harder
             if (!player.alive) return;
             if (Invulnerable()) { Cue("회피!", .6f); vfx.Flash(Sim.FlatY(ch.root.position, 1.1f), .7f); return; }
             if (anim.name == "counter" && anim.time >= .03f && anim.time <= .27f + CounterWindowBonus)
@@ -157,6 +158,21 @@ namespace Soul
         }
 
         // ---------- actions ----------
+        /// double jump (2026-11-09, needs the 도약 관절 leg part from the Z0 elite): F again during the jump arc. Starts from the current arc height with a 1.25x arc,
+        /// so the peak is ~2.36 m above the take-off floor: low terrain shelves (Z0 2.1 m, Z3 / Z5 2.0 m) can be
+        /// mounted; rope ledges (2.6 m) and the 3+ m cliffs of Z1 / Z2 / Z4 stay out of reach.
+        bool airJumped; const float AIR_JUMP_SCALE = 1.25f, AIR_JUMP_REACH = 1.8f;
+        /// running jump: forward reach multiplier on the jump root motion (0.9 m -> ~2.6 m); the move order to resume
+        const float RUN_JUMP_REACH = 2.9f; Vector3? moveOrder, resumeMove;
+        bool AirJump()
+        {
+            if (!Parts.Has(Parts.Leap)) return false;   // leg upgrade 도약 관절 (Z0 elite 무리의 우두머리): shelves above 1 jump are part-gated
+            if (!player.alive || airJumped || anim.name != "jump" || !anim.InArc || Falling) return false;
+            var p = ch.root.position; p.y += anim.ArcHeight; ch.root.position = p;
+            previousTip = null; vfx.ResetTrail(); anim.AirJump(AIR_JUMP_SCALE, AIR_JUMP_REACH); airJumped = true;
+            vfx.Dust(p + new Vector3(0, .05f, 0), .5f);
+            return true;
+        }
         bool PlayMove(string n) { previousTip = null; vfx.ResetTrail(); return anim.Play(n); }
         float YawToCursor() { var p = cam.Pick(Input.mousePosition, ch.root.position.y); if (!p.HasValue) return ch.yaw; var d = p.Value - ch.root.position; return Mathf.Atan2(d.x, d.z); }
         void FaceCursor() => anim.pendingYaw = YawToCursor();
@@ -165,13 +181,21 @@ namespace Soul
         {
             if (!player.alive || (ready.TryGetValue(code, out var r) && r > realTime)) return;
             if (code != KeyCode.Space && !CanAct()) return;
-            moveTarget = null;
+            moveOrder = moveTarget; moveTarget = null;
             if (code == KeyCode.Space) { if (cam.Pick(Input.mousePosition, ch.root.position.y).HasValue) FaceCursor(); PlayMove("dash"); }
             else if (code == KeyCode.Q) { FaceCursor(); PlayMove("heavyCharge"); After(.2f, () => { if (anim.name == "heavyCharge") PlayMove("heavy"); }); face.Set("wide", .2f); }
             else if (code == KeyCode.W) { FaceCursor(); PlayMove("wave"); }
             else if (code == KeyCode.E) { FaceCursor(); PlayMove("counter"); }
             else if (code == KeyCode.R) { FaceCursor(); PlayMove("jump"); After(.3f, () => { if (anim.name == "jump") PlayMove("flurry"); }); }
-            else if (code == KeyCode.F) PlayMove("jump");
+            else if (code == KeyCode.F)
+            {   // running jump (2026-11-09): moving toward a target, the jump carries the run forward (~2.6 m) along the
+                // move direction and the walk resumes on landing, so mounds and low ledges are hopped in stride
+                Vector3? run = null;
+                if (moveOrder.HasValue) { var dv = moveOrder.Value - ch.root.position; dv.y = 0; if (dv.magnitude > .6f) run = moveOrder; }
+                if (run.HasValue) { var dv = run.Value - ch.root.position; anim.pendingYaw = Mathf.Atan2(dv.x, dv.z); }
+                PlayMove("jump"); airJumped = false;
+                if (run.HasValue) { anim.rootScale = RUN_JUMP_REACH; resumeMove = run; }
+            }
             ready[code] = realTime + COOLDOWN[code];
         }
         void Attack()
@@ -195,6 +219,7 @@ namespace Soul
 
         void HandleInput()
         {
+            if (ShopInput()) return;   // merchant window (SoulGame.Field) eats input while open
             if (SettingsInput()) return;   // Esc settings window (SoulGame.Settings): pauses and eats input while open
             if (SkillInput()) return;   // skill keys / the new-skill key prompt (SoulGame.Skills)
             ropeHeld = Input.GetMouseButton(0);
@@ -203,9 +228,9 @@ namespace Soul
             // basic controls come from the key map (KeyBinds, Esc settings); Skill() still keys on the legacy codes internally
             if (KeyBinds.Down(KeyBinds.Act.Attack)) Attack();
             if (KeyBinds.Down(KeyBinds.Act.Dash)) Skill(KeyCode.Space);   // 스킬 = 파츠: only dash / jump are basic keys
-            if (KeyBinds.Down(KeyBinds.Act.Jump)) Skill(KeyCode.F);
+            if (KeyBinds.Down(KeyBinds.Act.Jump)) { if (!AirJump()) Skill(KeyCode.F); }
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            if (shift) { for (int i = Parts.Rope; i <= Parts.LabKeys; i++) if (Input.GetKeyDown(KeyCode.Alpha0 + i)) TogglePart(i); }   // debug: Shift+1..6 toggles parts
+            if (shift) { for (int i = Parts.Rope; i <= Parts.LabKeys; i++) if (Input.GetKeyDown(KeyCode.Alpha0 + i)) TogglePart(i); if (Input.GetKeyDown(KeyCode.Alpha8)) TogglePart(Parts.Leap); }   // debug: Shift+1..6 parts, Shift+8 도약 관절
             else
             {
                 if (Input.GetKeyDown(KeyCode.Alpha1)) Summon("crawler");
@@ -217,25 +242,31 @@ namespace Soul
             if (Input.GetKeyDown(KeyCode.C)) TogglePause();
             if (Input.GetKeyDown(KeyCode.Period) && paused) stepFrames++;
             if (Input.GetKeyDown(KeyCode.V)) cam.Toggle();
-            // T (like LoL Space): snap the view behind the character at once; it stays there (press again to re-snap)
-            if (KeyBinds.Down(KeyBinds.Act.View)) cam.SnapYaw(Sim.WrapPi(ch.yaw + Mathf.PI));
+            // T (like LoL Space): swing the view behind the character (smooth); it stays there (press again to re-aim)
+            if (KeyBinds.Down(KeyBinds.Act.View)) cam.TurnTo(Sim.WrapPi(ch.yaw + Mathf.PI));
             if (KeyBinds.Down(KeyBinds.Act.Map)) showMap = !showMap;
             if (Input.GetKeyDown(KeyCode.F1)) { debugHud = !debugHud; Cue(debugHud ? "디버그 표시 켜짐" : "디버그 표시 꺼짐", 1); }
             if (KeyBinds.Down(KeyBinds.Act.Rest)) RestAtPod();
+            KitInput();   // X: repair kit (SoulGame.Field)
             if (Input.GetKeyDown(KeyCode.K)) TogglePurify();
             if (showMap && Input.GetMouseButtonDown(0))
             {   // debug: click the world map to teleport there
                 var r = MapRect(); var mp = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
                 if (r.Contains(mp)) MapClick(r, mp);
             }
+            if (showMap && Input.GetMouseButtonDown(1))
+            {   // map pin: right-click sets / clears it (SoulGame.Guide)
+                var r = MapRect(); var mp = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                if (r.Contains(mp)) MapPinClick(r, mp);
+            }
             float wheel = Input.mouseScrollDelta.y; if (Mathf.Abs(wheel) > .01f) cam.ZoomBy(-Mathf.Sign(wheel) * .08f);
-            if (Input.GetMouseButton(1) && player.alive) { var p = cam.Pick(Input.mousePosition, ch.root.position.y); if (p.HasValue) { if (Input.GetMouseButtonDown(1)) vfx.Ring(Sim.FlatY(p.Value, .03f), .18f); moveTarget = p; } }
+            if (!showMap && Input.GetMouseButton(1) && player.alive) { var p = PickFloor(Input.mousePosition) ?? cam.Pick(Input.mousePosition, ch.root.position.y); if (p.HasValue) { if (Input.GetMouseButtonDown(1)) MoveMarkerClick(p.Value); moveTarget = p; } }
         }
 
         // ---------- frame ----------
         void Update()
         {
-            if (settingsOpen) { HandleInput(); if (settingsOpen) { cam.Update(0, ch.root.position); return; } }   // Esc settings: world and realTime frozen
+            if (settingsOpen) { HandleInput(); cam.Update(0, ch.root.position); return; }   // Esc settings: world and realTime frozen (the closing Esc must not reopen it this frame)
             float realDt = Mathf.Min(Time.unscaledDeltaTime, .05f); realTime += realDt;
             HandleInput();
             if (paused)
@@ -246,6 +277,7 @@ namespace Soul
             for (int i = timers.Count - 1; i >= 0; i--) if (timers[i].at <= realTime) { var fn = timers[i].fn; timers.RemoveAt(i); fn(); }
             float dt = paused ? 1 / 60f : realDt * timeScale; if (hitStop > 0) { hitStop = Mathf.Max(0, hitStop - realDt); dt = 0; }
             var input = Vector3.zero;
+            if (resumeMove.HasValue && !anim.busy) { if (!moveTarget.HasValue) moveTarget = resumeMove; resumeMove = null; }
             if (moveTarget.HasValue && !anim.busy)
             {
                 var d = moveTarget.Value - ch.root.position; d.y = 0; float dist = d.magnitude;
@@ -289,6 +321,12 @@ namespace Soul
                 }
             }
             else { fallV = 0; Falling = false; }
+            // left standing on a bare cliff face (a jump ran out of reach mid-face): slide off downhill
+            if (!arc && !Falling && Mathf.Abs(p.y - Terrain.Height(p.x, p.z)) < .05f && WorldCollision.SteepAt(p.x, p.z, out var down))
+            {
+                var q = WorldCollision.Move(p, p + new Vector3(down.x, 0, down.y) * 3.5f * dt, PLAYER_R, WorldCollision.STEP);
+                p.x = q.x; p.z = q.z; float f2 = WorldCollision.Floor(p.x, p.z, p.y, WorldCollision.STEP); if (f2 < p.y) p.y = f2;
+            }
             anim.airborne = Falling;
             ch.root.position = p; ch.UpdateWorld();
         }
@@ -325,6 +363,8 @@ namespace Soul
             vfx.Update(step, active, anim.name == "heavyCharge" ? anim.charge : 0);
             laser.Update(step, active ? 1 : anim.name == "heavyCharge" ? .6f : 0);
         }
+        /// cutaway: world geometry this far above the feet, between camera and player, is dithered away (SoulLit)
+        public const float CUT_ABOVE = 2.3f, CUT_RADIUS = 9.5f;
         void FrameTail(float realDt)
         {
             string n = anim.name;
@@ -332,12 +372,18 @@ namespace Soul
             face.Update(realDt, state);
             open.Update(ch.root.position); VistaUpdate(realDt); GrudgeUpdate(realDt); SkillsUpdate(realDt); atmo.Update(realDt, ch.root.position); ZoneUpdate(realDt);
             // top-down cutaway: dither out world geometry above head height between the camera and the player
-            Shader.SetGlobalVector("_SoulCutCenter", (Vector4)Sim.ToUnity(ch.root.position + Sim.ApplyAxisAngle(new Vector3(0, 0, 3), Vector3.up, cam.yaw)) + new Vector4(0, 0, 0, 9.5f));
-            Shader.SetGlobalVector("_SoulCutParams", new Vector4(2.3f, 2.5f, 0, 0));
+            // (terrain shelves too, 2026-11-09: a higher shelf on the camera side used to cover the player like a roof)
+            var camDirSim = Sim.ApplyAxisAngle(new Vector3(0, 0, 1), Vector3.up, cam.yaw); var camDirU = Sim.ToUnity(camDirSim);
+            Shader.SetGlobalVector("_SoulCutCenter", (Vector4)Sim.ToUnity(ch.root.position + camDirSim * 3) + new Vector4(0, 0, 0, 9.5f));
+            Shader.SetGlobalVector("_SoulCutParams", new Vector4(CUT_ABOVE, 2.5f, camDirU.x, camDirU.z));
             ash.Update(realDt, ch.root.position);
             if (sky) sky.position = Sim.ToUnity(ch.root.position);
             hurtFlash = Mathf.Max(0, hurtFlash - realDt * 2.5f);
             ch.Sync(); RopeVisuals();
+            EcologyUpdate(realDt);   // 영역 생태계 (SoulGame.Ecology)
+            LoreUpdate(realDt);   // 생존자 기록 (SoulGame.Lore)
+            MoveMarkerUpdate(realDt);   // right-click destination (SoulGame.Move)
+            GuideUpdate(realDt);   // 경로 유도: explore camera, wisps, map pin (SoulGame.Guide)
             cam.Update(realDt, ch.root.position);
         }
 
@@ -475,7 +521,8 @@ namespace Soul
                 GUI.color = Color.white; GUI.Label(new Rect(0, H * .68f + 28, W, 20), to, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             }
             if (debugHud) GUI.Label(new Rect(20, 102, 500, 20), $"파츠: {Parts.Owned()}   ·   M 지도 · Shift+1~6 파츠 토글 · F1 디버그 표시", small);
-            ZoneGUI(W, H); RopeGUI(); GrudgeGUI(W, H); SkillsGUI(W, H);
+            ZoneGUI(W, H); EcologyGUI(W, H); SubtitleGUI(W, H); FieldGUI(W, H); RopeGUI(); GrudgeGUI(W, H); SkillsGUI(W, H);
+            PinGUI(W, H);
             if (showMap) DrawMap();
             SettingsGUI(W, H);   // Esc settings window, drawn last (on top)
         }
@@ -515,10 +562,10 @@ namespace Soul
                 for (int i = 1; i <= 3; i++) { var q = c + new Vector2(st.n.x, st.n.y) * (sz / 2 + i * 2.2f); GUI.DrawTexture(new Rect(q.x - 1.5f, q.y - 1.5f, 3, 3), white); }
             }
             var pp = P(new Vector2(ch.root.position.x, ch.root.position.z));
-            DrawMapZone(r, pp);
+            DrawMapZone(r, pp); DrawMapPin(r);
             GUI.color = new Color(.3f, .85f, 1f); GUI.DrawTexture(new Rect(pp.x - 5, pp.y - 5, 10, 10), white);
             GUI.color = Color.white;
-            GUI.Label(new Rect(r.x, r.yMax + 4, r.width, 22), debugHud ? "M 닫기 · 포드 클릭 = 빠른 이동 · Shift+클릭 = 순간이동 · 색 점 = 파츠 게이트 · 회색 = 통로/낙하 · 빨강 = 보스" : "M 닫기 · 발견한 포드를 누르면 빠른 이동", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
+            GUI.Label(new Rect(r.x, r.yMax + 4, r.width, 22), debugHud ? "M 닫기 · 포드 클릭 = 빠른 이동 · 우클릭 = 핀 · Shift+클릭 = 순간이동 · 색 점 = 파츠 게이트 · 회색 = 통로/낙하 · 빨강 = 보스" : "M 닫기 · 발견한 포드를 누르면 빠른 이동 · 우클릭으로 핀 꽂기", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
         }
     }
 }
