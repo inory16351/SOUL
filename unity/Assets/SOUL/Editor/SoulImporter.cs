@@ -45,7 +45,9 @@ namespace Soul.EditorTools
         /// Z0 field roster (Codex job 17): built when their JSON exists (Runtime falls back to Crawler / Warden otherwise)
         public static void BuildFieldEnemies()
         {
-            foreach (var (file, prefab) in new[] { ("ashMite", "AshMite"), ("sentry", "Sentry"), ("houndAlpha", "HoundAlpha"), ("executor", "Executor") })
+            foreach (var (file, prefab) in new[] { ("ashMite", "AshMite"), ("sentry", "Sentry"), ("houndAlpha", "HoundAlpha"), ("executor", "Executor"),
+                ("swarmBug", "SwarmBug"), ("sludgeCrawler", "SludgeCrawler"), ("sporeVine", "SporeVine"), ("dredger", "Dredger"), ("giantDredger", "GiantDredger"),
+                ("shellHost", "ShellHost"), ("mireMother", "MireMother"), ("mireTentacle", "MireTentacle") })   // + Z6 roster (Codex 22)
                 if (File.Exists(Path.Combine(DataDir, file + ".json"))) Build(file, prefab);
         }
         public static void CopyFromWeb()

@@ -21,6 +21,7 @@ namespace Soul
             new SkillDef { id = "whirl",    name = "회오리",      part = "회전 관절 (오른팔)",    cooldown = 4, icon = UiArt.WHIRL, legacy = KeyCode.Q, desc = "몸을 돌려 주위를 벤다" },
             new SkillDef { id = "wave",     name = "레이저 파동", part = "코어 방출기",          cooldown = 3, icon = UiArt.WAVE,  legacy = KeyCode.W, desc = "칼날로 빛의 파동을 날린다" },
             new SkillDef { id = "storm",    name = "칼날 폭풍",   part = "고속 구동부 (오른팔)", cooldown = 9, icon = UiArt.STORM, legacy = KeyCode.R, desc = "뛰어올라 칼날을 휘몰아친다" },
+            new SkillDef { id = "suck",     name = "흡입",        part = "준설기 흡입구",        cooldown = 8, icon = UiArt.WAVE, desc = "앞쪽 적을 끌어당겨 모은다" },
             new SkillDef { id = "overload", name = "코어 과부하", part = "뒤틀린 에너지 코어",   cooldown = 45, icon = UiArt.CORE, desc = "체력 회복 · 이동 속도 증가 · 받는 피해 증가" },
         };
         /// draft sources: skill shrine (공명 기둥) of each zone; grudge parts by zone

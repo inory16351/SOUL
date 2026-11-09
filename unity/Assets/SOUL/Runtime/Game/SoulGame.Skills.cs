@@ -54,7 +54,8 @@ namespace Soul
         void CastSkill(Skills.Owned o)
         {
             if (!player.alive || o.ready > realTime) return;
-            if (o.def.id == "overload")
+            if (o.def.id == "suck") { if (!CanAct()) return; FaceCursor(); CastSuck(); }   // 거대 준설기 skill (SoulGame.Mire)
+            else if (o.def.id == "overload")
             {
                 overloadLeft = Skills.OVERLOAD_TIME + .5f * (o.level - 1) + Skills.Perk(o, Skills.PerkKind.Duration);
                 vfx.Ring(Sim.FlatY(ch.root.position, .1f), 2.2f, true); vfx.Flash(Sim.FlatY(ch.root.position, 1.2f), 1.2f); cam.Shake(.06f);

@@ -175,6 +175,8 @@ namespace Soul
         public bool quad;
         /// boss ranged set (used beyond Enemy.BOSS_NEAR, 50 / 50): energy bolt + charge
         public EnemyAttack[] far;
+        /// attacks are driven by game code (SoulGame.Mire: 껍질 숙주, 늪의 어미), never chosen by the AI
+        public bool scripted;
         public static readonly Dictionary<string, EnemyType> TYPES = new Dictionary<string, EnemyType>
         {
             { "crawler", new EnemyType { prefab = "Prefabs/Crawler", scrap = 2, hp = 60, speed = 3.3f, turn = 7, keep = 1.1f, poise = 0, attacks = new[] {
@@ -209,6 +211,42 @@ namespace Soul
                 new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 7.6f, cooldown = 3.2f, windup = 1.1f, kind = "cone", radius = 8.6f, angle = 2.5f, damage = 30, recover = 1.0f },
                 new EnemyAttack { name = "slam", rangeMin = 5, rangeMax = 14, cooldown = 6, windup = 1.3f, kind = "circle", radius = 5f, damage = 34, recover = 1.05f, atTarget = true, repeat = 2 },
                 new EnemyAttack { name = "thrust", rangeMin = 6, rangeMax = 15, cooldown = 4, windup = 1.0f, kind = "line", width = 3.1f, length = 14f, damage = 30, recover = 1.0f },
+            } } },
+            // ---- Z6 독성 늪 roster (기획서/Z6_독성늪_보스_생태계.md, 2026-11-09): placeholder looks = existing rigs scaled / tinted ----
+            // 떼벌레: tiny fast swarm gnawing machines (organism)
+            { "swarmBug", new EnemyType { prefab = "Prefabs/SwarmBug", rig = "crawler", hp = 14, speed = 5.2f, turn = 11, keep = .6f, poise = 0, size = .42f, soul = 4, scrap = 1, sight = 9, eye = new Color(1.2f, 2.4f, .4f, 1), attacks = new[] {
+                new EnemyAttack { name = "bite", rangeMin = 0, rangeMax = 1.2f, cooldown = 1.1f, windup = .4f, kind = "cone", radius = 1.2f, angle = 1.5f, damage = 5, recover = .4f },
+                new EnemyAttack { name = "lunge", rangeMin = 1.4f, rangeMax = 4, cooldown = 2.2f, windup = .5f, kind = "line", width = .7f, length = 3.4f, damage = 6, dash = 3.2f, dashTime = .16f, recover = .45f },
+            } } },
+            // 슬러지 크롤러: a polluted machine lying under the sludge (short sight = ambush), claws and spits poison
+            { "sludgeCrawler", new EnemyType { prefab = "Prefabs/SludgeCrawler", rig = "crawler", hp = 75, speed = 3.0f, turn = 6, keep = 1.2f, poise = 20, size = .95f, soul = 14, scrap = 2, sight = 5, eye = new Color(1.6f, 2.2f, .3f, 1), attacks = new[] {
+                new EnemyAttack { name = "lunge", rangeMin = 2, rangeMax = 6, cooldown = 2.8f, windup = .7f, kind = "line", width = 1.3f, length = 5, damage = 15, dash = 4.6f, dashTime = .22f, recover = .7f },
+                new EnemyAttack { name = "spit", rangeMin = 4, rangeMax = 10, cooldown = 4.5f, windup = 1.0f, kind = "circle", radius = 1.8f, damage = 10, recover = .7f, atTarget = true },
+            } } },
+            // 포자 덩굴: a rooted organic turret; lobbed spores leave a poison puddle
+            { "sporeVine", new EnemyType { prefab = "Prefabs/SporeVine", rig = "warden", hp = 130, speed = 0, turn = 2.2f, keep = 99, poise = 50, size = .8f, soul = 16, scrap = 2, sight = 15, eye = new Color(1.4f, 2.6f, .5f, 1), attacks = new[] {
+                new EnemyAttack { name = "spore", rangeMin = 3, rangeMax = 15, cooldown = 4.2f, windup = 1.5f, kind = "circle", radius = 2.6f, damage = 14, recover = .9f, atTarget = true },
+                new EnemyAttack { name = "lash", rangeMin = 0, rangeMax = 3, cooldown = 2.6f, windup = .75f, kind = "cone", radius = 3.2f, angle = 2.2f, damage = 12, recover = .7f },
+            } } },
+            // 녹슨 준설기: a half-sunk dredger; its intake pulls you in, then the bucket slams
+            { "dredger", new EnemyType { prefab = "Prefabs/Dredger", rig = "warden", hp = 320, speed = 1.2f, turn = 2.2f, keep = 2.2f, poise = 70, size = 1.3f, soul = 30, scrap = 4, sight = 12, eye = new Color(2.4f, 1.4f, .3f, 1), attacks = new[] {
+                new EnemyAttack { name = "suck", rangeMin = 3, rangeMax = 10, cooldown = 6, windup = 1.2f, kind = "cone", radius = 10, angle = .8f, damage = 4, recover = .9f },
+                new EnemyAttack { name = "slam", rangeMin = 0, rangeMax = 4, cooldown = 3.2f, windup = 1.0f, kind = "circle", radius = 3, damage = 24, recover = .9f, atTarget = true },
+            } } },
+            // elite 거대 준설기: feed it swarm bugs through the intake and it chokes (SoulGame.Mire); drops the skill 흡입
+            { "giantDredger", new EnemyType { prefab = "Prefabs/GiantDredger", rig = "warden", hp = 1150, speed = 1.0f, turn = 1.2f, keep = 4, poise = 220, size = 3.0f, soul = 50, scrap = 6, sight = 14, eliteName = "거대 준설기", eye = new Color(2.8f, 1.5f, .2f, 1), attacks = new[] {
+                new EnemyAttack { name = "suck", rangeMin = 4, rangeMax = 16, cooldown = 7, windup = 1.4f, kind = "cone", radius = 16, angle = .75f, damage = 6, recover = 1.0f },
+                new EnemyAttack { name = "slam", rangeMin = 0, rangeMax = 9, cooldown = 4.2f, windup = 1.2f, kind = "circle", radius = 5, damage = 32, recover = 1.0f, atTarget = true, repeat = 1 },
+                new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 8, cooldown = 3.6f, windup = 1.1f, kind = "cone", radius = 9, angle = 2.4f, damage = 28, recover = 1.0f },
+            } } },
+            // elite 껍질 숙주: sunk in its pool, only the shell shows; throws balls of sludge from the sacs on its shell (scripted)
+            { "shellHost", new EnemyType { prefab = "Prefabs/ShellHost", rig = "crawler", quad = true, scripted = true, hp = 950, speed = 0, turn = 1.5f, keep = 99, poise = 9999, size = 4.6f, soul = 50, scrap = 6, sight = 18, eliteName = "껍질 숙주", eye = new Color(1.6f, .4f, 2.4f, 1), attacks = new EnemyAttack[0] } },
+            // Z6 boss 늪의 어미: an evolved organism rooted in the whole mire (organic: no grudge part). Scripted tide fight.
+            { "mireMother", new EnemyType { prefab = "Prefabs/MireMother", rig = "warden", scripted = true, hp = 1700, speed = 0, turn = 1.4f, keep = 99, poise = 9999, size = 3.4f, bossName = "늪의 어미", soul = 80, eye = new Color(1.4f, 2.6f, .5f, 1), attacks = new EnemyAttack[0], far = new EnemyAttack[0] } },
+            // its tentacles (low tide): rooted, sweep and slam; the glowing bulb at the root is the body
+            { "mireTentacle", new EnemyType { prefab = "Prefabs/MireTentacle", rig = "warden", hp = 110, speed = 0, turn = 3, keep = 99, poise = 9999, size = 1.25f, soul = 10, scrap = 1, sight = 30, eye = new Color(1.4f, 2.6f, .5f, 1), attacks = new[] {
+                new EnemyAttack { name = "sweep", rangeMin = 0, rangeMax = 7, cooldown = 3.4f, windup = 1.0f, kind = "cone", radius = 7.5f, angle = 1.9f, damage = 20, recover = .9f },
+                new EnemyAttack { name = "slam", rangeMin = 4, rangeMax = 12, cooldown = 4.4f, windup = 1.2f, kind = "circle", radius = 2.8f, damage = 24, recover = 1.0f, atTarget = true },
             } } },
             // Z0 boss: lies dormant until the fight, then attacks on a global 5 s clock (melee near, bolt / charge far).
             // No tear-off (뜯기) here: the rope arm is not owned yet in Z0, so the gimmick is the energy pillars (BossPillars).
@@ -381,6 +419,15 @@ namespace Soul
         public void KnockDown() { ClearTele(); state = "down"; t = 0; velocity = Vector3.zero; }
         public void Revive(float frac, float time) { phase = 2; hp = def.hp * frac; hpFrac = frac; Wake(time); }
         public void Heal(float amount) { hp = Mathf.Min(MaxHp, hp + amount); hpFrac = hp / MaxHp; }
+        /// damage over time (독에 잠식된 코어): no flinch, no aggro, no hit scaling
+        public void Poison(float amount)
+        {
+            if (!Hittable || amount <= 0) return;
+            hp -= amount; hpFrac = hp / MaxHp;
+            if (hp <= 0) { if (IsBoss && phase == 1) { hp = 0; hpFrac = 0; KnockDown(); } else Die(); }
+        }
+        /// poisoned until (game time; SoulGame.Mire ticks it)
+        public float poisonUntil;
         void ClearTele() { if (tele != null) { tele.Dispose(); tele = null; } }
         public void Die()
         {
@@ -419,7 +466,7 @@ namespace Soul
                 // one attack every BOSS_INTERVAL s: melee when close, otherwise 50 % energy bolt / 50 % charge
                 TurnTo(yawToP, def.turn);
                 bool sameLevel = Mathf.Abs(player.pos.y - pos.y) < 1.4f;
-                if (bossClock <= 0 && !mgr.passive && player.alive && sameLevel && Mathf.Abs(AngleTo(yaw, yawToP)) < .6f)
+                if (!def.scripted && bossClock <= 0 && !mgr.passive && player.alive && sameLevel && Mathf.Abs(AngleTo(yaw, yawToP)) < .6f)
                 {
                     EnemyAttack a;
                     if (dist <= BOSS_NEAR)
@@ -466,7 +513,7 @@ namespace Soul
                 var options = new List<EnemyAttack>();
                 foreach (var a in def.attacks) if (dist >= a.rangeMin && dist <= a.rangeMax && !(cool.TryGetValue(a.name, out var c) && c > 0)) options.Add(a);
                 bool sameLevel = Mathf.Abs(player.pos.y - pos.y) < 1.4f;   // no attacks through floors
-                if (options.Count > 0 && !mgr.passive && t > .35f && player.alive && sameLevel && Mathf.Abs(AngleTo(yaw, yawToP)) < .5f)
+                if (!def.scripted && options.Count > 0 && !mgr.passive && t > .35f && player.alive && sameLevel && Mathf.Abs(AngleTo(yaw, yawToP)) < .5f)
                 {
                     var a = options[Random.Range(0, options.Count)];
                     attack = a; state = "windup"; t = 0; repeatLeft = a.repeat;

@@ -10,6 +10,9 @@ namespace Soul
     public class LaserBlade
     {
         static readonly Color BLUE = new Color(.20f, .62f, 1.0f), CORE = new Color(.80f, .95f, 1.0f);
+        // 독에 잠식된 코어 (Z6 껍질 숙주 part): the blade turns violet while it is owned
+        static readonly Color VIOLET = new Color(.62f, .16f, 1.0f), VCORE = new Color(.95f, .78f, 1.0f);
+        public static bool toxic; float toxicK;
         readonly Material line, glow, halo; readonly Light light;
         readonly Color glowColor, haloColor;
         float t;
@@ -36,10 +39,13 @@ namespace Soul
         public void Update(float dt, float boost)
         {
             t += dt;
+            toxicK = Mathf.MoveTowards(toxicK, toxic ? 1 : 0, dt * 1.5f);
+            Color gc = Color.Lerp(BLUE, VIOLET, toxicK) * 2.2f, hc = Color.Lerp(BLUE, VIOLET, toxicK) * 1.1f, cc = Color.Lerp(CORE, VCORE, toxicK);
             float flicker = 1 + Mathf.Sin(t * 47) * .05f + Mathf.Sin(t * 19.3f) * .03f;
-            if (glow) { var c = glowColor; c.a = (.40f + boost * .35f) * flicker; Mats.SetColor(glow, c); }
-            if (halo) { var c = haloColor; c.a = (.10f + boost * .22f) * flicker; Mats.SetColor(halo, c); }
-            if (line) { var c = CORE * (3 + boost * 2); c.a = 1; Mats.SetColor(line, c); }
+            if (glow) { var c = gc; c.a = (.40f + boost * .35f) * flicker; Mats.SetColor(glow, c); }
+            if (halo) { var c = hc; c.a = (.10f + boost * .22f) * flicker; Mats.SetColor(halo, c); }
+            if (line) { var c = cc * (3 + boost * 2); c.a = 1; Mats.SetColor(line, c); }
+            if (light) light.color = Color.Lerp(BLUE, VIOLET, toxicK);
             if (light) light.intensity = (.8f + boost * 1.8f) * flicker * SoulLights.PointScale;
         }
     }

@@ -91,6 +91,26 @@ namespace Soul
             Arenas.Add(arena);
             // rope swing demo in the ruined streets: a collapsed street-level gap with a crane hook over it
             Chasms.Add(new Chasm { zone = 0, center = new Vector3(-210, 0, 60), yaw = 0, halfLength = 16, halfWidth = 5 });
+
+            // Z6 독성 늪 (기획서/Z6_독성늪_보스_생태계.md, 2026-11-09): entered from the woods (Z5) through the sludge
+            // (내오염 코어) or a rubble wall (캐논). Sludge banks by the entrances, the sunken village west, the mother's
+            // drowned square south. Boss = 늪의 어미 (organic: tide gimmick, no grudge part), reward = a lab key.
+            var z6 = ZoneGraph.Zones[6];
+            Areas.Add(new Area { zone = 6, name = z6.areas[0], center = new Vector2(1320, 560), radius = 170, plotFill = .15f });
+            Areas.Add(new Area { zone = 6, name = z6.areas[1], center = new Vector2(1110, 800), radius = 220, plotFill = .55f });
+            Areas.Add(new Area { zone = 6, name = z6.areas[2], center = new Vector2(1300, 950), radius = 120, plotFill = .2f });
+            Pods.Add(new Pod { id = 2, zone = 6, name = "슬러지 둑 포드", pos = new Vector3(1320, 0, 520), yaw = 0 });
+            Pods.Add(new Pod { id = 3, zone = 6, name = "어미 둥지 앞 포드", pos = new Vector3(1290, 0, 872), yaw = 0 });
+            var mire = new BossArena { zone = 6, boss = "mireMother", name = "늪의 어미", title = "MOTHER OF THE MIRE", center = new Vector3(1300, 0, 950), radius = 40, entranceYaw = Mathf.PI, reward = z6.reward };
+            // rope shortcut over the west wall (the mother's square is a drowned plaza: a pipe anchor hangs over it)
+            var nw = new Vector2(1, 0);
+            mire.ropeSite = new ZoneWorld.Site
+            {
+                index = 101, pos = new Vector2(mire.center.x - mire.radius, mire.center.z), n = nw, tan = new Vector2(nw.y, -nw.x), yaw = Mathf.Atan2(nw.x, nw.y),
+                link = new ZoneGraph.Link { a = 6, b = 6, kind = ZoneGraph.Kind.Part, part = Parts.Rope, oneWay = true, note = "보스 지대 지름길" },
+            };
+            mire.pillars1 = new Vector2[0]; mire.pillars2 = new Vector2[0];
+            Arenas.Add(mire);
         }
 
         static Vector2[] Ring(float r, int n, float a0)

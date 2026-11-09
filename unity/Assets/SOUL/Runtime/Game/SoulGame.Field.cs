@@ -228,14 +228,48 @@ namespace Soul
     public static class FieldPropModels
     {
         static Mesh burrow, depot, depotLock, merchant, lantern;
+        const int Steel = 0x484c49, Rust = 0x75503b, Soot = 0x292b28;
+        static readonly Vector3 LockCenter = new Vector3(0, .55f, .53f);
+        static readonly Vector3 BulbCenter = new Vector3(.39f, 1.62f, -.12f);
+        static Vector3 V(float x, float y, float z) => new Vector3(x, y, z);
+        static Color C(int hex) => MeshBuilder.Hex(hex);
         /// a dark burrow mouth in the ground, ~1 m
         public static Mesh Burrow()
         {
             if (burrow != null) return burrow;
             var b = new MeshBuilder(501);
-            b.Disc(new Vector3(0, .01f, 0), 0, .55f, 10, MeshBuilder.Hex(0x14110f));
-            b.Disc(new Vector3(0, .02f, 0), .45f, .75f, 10, MeshBuilder.Hex(0x4a4038));
-            for (int i = 0; i < 5; i++) { float a = i * 1.26f; b.Rock(new Vector3(Mathf.Sin(a) * .8f, .06f, Mathf.Cos(a) * .8f), .14f, MeshBuilder.Hex(0x5a5048), .3f, .6f, 0); }
+            // A half-buried broken drain: the entrance is an actual recess,
+            // with a dark back wall, floor and an open, thick semicircular lip.
+            b.Quad(V(-.29f, .012f, -.29f), V(-.29f, .012f, .39f), V(.29f, .012f, .39f), V(.29f, .012f, -.29f), C(0x211c18));
+            for (int i = 0; i < 6; i++)
+            {
+                float a = i * Mathf.PI / 6, c = (i + 1) * Mathf.PI / 6;
+                Vector3 inner0 = V(Mathf.Cos(a) * .30f, .025f + Mathf.Sin(a) * .27f, .29f);
+                Vector3 inner1 = V(Mathf.Cos(c) * .30f, .025f + Mathf.Sin(c) * .27f, .29f);
+                Vector3 outer0 = V(Mathf.Cos(a) * .44f, .025f + Mathf.Sin(a) * .40f, .28f + (i % 2) * .035f);
+                Vector3 outer1 = V(Mathf.Cos(c) * .44f, .025f + Mathf.Sin(c) * .40f, .28f + ((i + 1) % 2) * .035f);
+                Vector3 back = V(0, 0, -.51f);
+                b.Quad(inner0, outer0, outer1, inner1, b.Jitter(0x8a8175));
+                b.Quad(inner0, inner1, inner1 + back, inner0 + back, C(0x3b3530));
+                b.Quad(outer0, outer0 + back, outer1 + back, outer1, b.Jitter(0x716b60));
+                b.Tri(V(0, .025f, -.22f), inner0 + back, inner1 + back, C(0x151512));
+            }
+            for (int i = 0; i < 8; i++)
+            {
+                float a = .65f + i * (Mathf.PI * 2 - 1.3f) / 7;
+                float x = Mathf.Sin(a) * .43f, z = Mathf.Cos(a) * .40f;
+                Pebble(b, V(x, .055f, z), V(.13f, .07f, .12f), i % 3 == 0 ? 0x787164 : 0x50453a);
+            }
+            // Rebar lies along the broken upper lip, safely within the rim.
+            b.Beam(V(-.23f, .355f, .28f), V(-.08f, .426f, .26f), .012f, .011f, 3, C(Rust));
+            b.Beam(V(-.08f, .426f, .26f), V(.02f, .417f, .31f), .011f, .007f, 3, C(Rust));
+            for (int i = 0; i < 2; i++)
+            {
+                Vector3 a = V(-.25f + i * .45f, .032f, .40f), end = a + V(.075f, .008f, .10f - i * .14f);
+                b.Beam(a, end, .014f, .012f, 4, C(0xb4a58a));
+                Pebble(b, a, V(.023f, .018f, .020f), 0xa99b83);
+                Pebble(b, end, V(.022f, .017f, .020f), 0xb4a58a);
+            }
             return burrow = b.Build("burrow");
         }
         /// a sealed military container, ~1.6 x 1 x 1 m before the 1.5x scale
@@ -243,16 +277,49 @@ namespace Soul
         {
             if (depot != null) return depot;
             var b = new MeshBuilder(502);
-            b.Box(new Vector3(0, .45f, 0), new Vector3(1.6f, .9f, 1f), MeshBuilder.Hex(0x4f564a));
-            b.Box(new Vector3(0, .92f, 0), new Vector3(1.66f, .06f, 1.06f), MeshBuilder.Hex(0x3e443a));
-            for (int i = -1; i <= 1; i++) b.Box(new Vector3(i * .55f, .45f, .51f), new Vector3(.05f, .86f, .03f), MeshBuilder.Hex(0x30352e));
-            b.Box(new Vector3(-.5f, .2f, -.6f), new Vector3(.3f, .18f, .2f), MeshBuilder.Hex(0x5a5048));
+            // 1.6 x 1.0 m shell; only the specified front hasp projects to z=.55.
+            Case(b, V(0, .47f, 0), V(1.54f, .76f, .92f), 0x535b4d, true);
+            b.Box(V(0, .859f, 0), V(1.53f, .027f, .91f), C(Soot));
+            Case(b, V(0, .917f, 0), V(1.58f, .09f, .98f), 0x656a59);
+            for (int i = -2; i <= 2; i++)
+            {
+                float x = i * .31f;
+                b.Box(V(x, .977f, 0), V(.045f, .030f, .87f), b.Jitter(0x7a7d69));
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    b.Box(V(x, .47f, side * .470f), V(.045f, .72f, .035f), b.Jitter(Steel));
+                    // Rust run-off has an uneven, pointed lower edge.
+                    if (i != 0)
+                        b.Tri(V(x + side * .028f, .78f, side * .489f), V(x - side * .024f, .78f, side * .489f), V(x + .008f, .41f + i * .027f, side * .489f), C(Rust));
+                }
+            }
+            for (int side = -1; side <= 1; side += 2)
+            {
+                for (int end = -1; end <= 1; end += 2)
+                {
+                    b.Box(V(side * .67f, .045f, end * .37f), V(.24f, .09f, .23f), C(Steel));
+                    b.Cylinder(V(side * .73f, .091f, end * .42f), .022f, .022f, .014f, 3, C(0x9b947c));
+                }
+                b.Beam(V(side * .48f - .09f, .857f, -.477f), V(side * .48f + .09f, .857f, -.477f), .020f, .020f, 4, C(Rust));
+            }
+            b.Box(V(0, .65f, .485f), V(.25f, .34f, .030f), C(Soot));
+            b.Box(V(0, .70f, .509f), V(.075f, .27f, .024f), C(0x85816b));
+            b.Box(LockCenter - V(0, 0, .015f), V(.25f, .19f, .03f), C(Steel));
+            b.Beam(V(-.077f, .635f, .524f), V(.077f, .635f, .524f), .016f, .016f, 4, C(Rust));
+            // Folded tarp corner, with a low ridge across the lid and a torn flap.
+            Vector3 a = V(-.76f, .969f, -.43f), c = V(-.28f, .969f, -.43f), d = V(-.43f, .980f, -.08f), e = V(-.76f, .970f, .06f);
+            b.Quad(a, e, d, c, C(0x76725a));
+            b.Quad(a, V(-.771f, .73f, -.39f), V(-.771f, .68f, .04f), e, C(0x5d5c48));
+            b.Tri(e, V(-.68f, .987f, -.16f), d, C(0x89836a));
+            b.Tri(V(.22f, .965f, .12f), V(.43f, .965f, .27f), V(.55f, .965f, .08f), C(Rust));
             return depot = b.Build("depot");
         }
         public static Mesh DepotLock()
         {
             if (depotLock != null) return depotLock;
-            var b = new MeshBuilder(503); b.Box(new Vector3(0, .55f, .53f), new Vector3(.22f, .16f, .04f), Color.white);
+            var b = new MeshBuilder(503);
+            // Small inset lock plate; the dark hasp and hinge stay in the lit mesh.
+            b.Box(LockCenter + V(0, 0, .012f), V(.16f, .108f, .016f), Color.white);
             return depotLock = b.Build("depot lock");
         }
         /// a hunched, gentle scavenger machine sitting by its wares, ~1.4 m
@@ -260,20 +327,103 @@ namespace Soul
         {
             if (merchant != null) return merchant;
             var b = new MeshBuilder(504);
-            b.Rock(new Vector3(0, .55f, 0), .45f, MeshBuilder.Hex(0x6a6458), .2f, .9f, 1);
-            b.Rock(new Vector3(0, 1.05f, .15f), .24f, MeshBuilder.Hex(0x7a7468), .15f, 1, 1);
-            b.Box(new Vector3(0, 1.08f, .36f), new Vector3(.22f, .06f, .04f), MeshBuilder.Hex(0x1a1c1e));
-            for (int s = -1; s <= 1; s += 2) b.Beam(new Vector3(s * .35f, .75f, .1f), new Vector3(s * .45f, .25f, .35f), .06f, .05f, 5, MeshBuilder.Hex(0x5a5448));
-            b.Box(new Vector3(.7f, .2f, .4f), new Vector3(.6f, .4f, .4f), MeshBuilder.Hex(0x4a4238));
-            b.Box(new Vector3(-.65f, .15f, .3f), new Vector3(.4f, .3f, .4f), MeshBuilder.Hex(0x3e4a44));
-            b.Beam(new Vector3(.2f, 1.2f, -.2f), new Vector3(.3f, 1.9f, -.25f), .02f, .02f, 4, MeshBuilder.Hex(0x2a2c2e));
+            // Low mat, round seated haunches and lowered head give an inviting pose.
+            Case(b, V(0, .018f, .42f), V(1.92f, .028f, 1.18f), 0x555549);
+            Pebble(b, V(0, .53f, -.035f), V(.39f, .45f, .31f), 0x716c5e, 1);
+            Pebble(b, V(0, 1.105f, .125f), V(.27f, .287f, .235f), 0x8d8672, 1);
+            Pebble(b, V(0, 1.105f, .304f), V(.208f, .105f, .071f), 0x303d3b);
+            // Two short, downward-sloping eyelids; muted paint, never glow.
+            for (int side = -1; side <= 1; side += 2)
+                b.Beam(V(side * .042f, 1.119f, .369f), V(side * .120f, 1.108f, .359f), .010f, .008f, 3, C(0xb0b6a0));
+            b.Box(V(-.19f, .71f, .239f), V(.18f, .16f, .030f), C(0x647567));
+            b.Box(V(.11f, .49f, .273f), V(.23f, .12f, .027f), C(0x87745c));
+            b.Box(V(.03f, 1.349f, .08f), V(.17f, .028f, .15f), C(0x676c5d));
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Pebble(b, V(side * .27f, .24f, .24f), V(.19f, .16f, .21f), 0x625f53);
+                b.Beam(V(side * .25f, .19f, .29f), V(side * .32f, .12f, .48f), .075f, .057f, 4, C(Steel));
+                b.Box(V(side * .32f, .083f, .52f), V(.19f, .10f, .24f), C(0x777362));
+                Vector3 shoulder = V(side * .34f, .80f, .055f), elbow = V(side * .52f, .47f, .23f);
+                Vector3 wrist = V(side * .32f, .32f + (side == 1 ? .025f : 0), .58f);
+                Pebble(b, shoulder, V(.10f, .115f, .10f), 0x8a806b);
+                b.Beam(shoulder, elbow, .061f, .048f, 5, C(0x65695b));
+                b.Beam(elbow, wrist, .043f, .029f, 5, C(0x8c8672));
+                b.Box(wrist + V(0, -.015f, .035f), V(.12f, .048f, .12f), C(0x6a7063));
+                // Delicate curved fingers rest beside the laid-out parts.
+                for (int finger = 0; finger < 2; finger++)
+                    b.Beam(wrist + V(-.033f + finger * .065f, -.01f, .07f), wrist + V(-.028f + finger * .055f, -.055f, .14f), .012f, .008f, 3, C(0xaaa08a));
+                // Backpack rails and woven retaining straps are visible above.
+                b.Beam(V(side * .27f, .28f, -.30f), V(side * .27f, 1.24f, -.37f), .025f, .022f, 4, C(Rust));
+                b.Box(V(side * .16f, .88f, -.515f), V(.040f, .79f, .025f), C(0x454b40));
+            }
+            b.Beam(V(-.28f, 1.22f, -.37f), V(.28f, 1.22f, -.37f), .024f, .024f, 4, C(Steel));
+            b.Box(V(0, .55f, -.38f), V(.49f, .33f, .27f), C(0x515b50));
+            b.Box(V(-.025f, .88f, -.385f), V(.43f, .26f, .25f), C(0x7b7059));
+            b.Beam(V(-.22f, 1.105f, -.39f), V(.20f, 1.105f, -.39f), .105f, .083f, 6, C(0x686c60));
+            // Two patched boxes, each with a recessed lid and retaining bands.
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Vector3 at = V(side * .73f, side == 1 ? .19f : .15f, .37f);
+                Vector3 size = V(.42f, side == 1 ? .31f : .23f, .37f);
+                Case(b, at, size, side == 1 ? 0x6b6250 : 0x526055);
+                for (int strap = -1; strap <= 1; strap += 2)
+                    b.Box(at + V(strap * .13f, size.y * .5f + .006f, 0), V(.035f, .012f, .34f), C(0x93907a));
+            }
+            Case(b, V(-.08f, .092f, .73f), V(.24f, .10f, .19f), 0x887d67);
+            b.Disc(V(.26f, .044f, .83f), .047f, .095f, 8, C(0x918b75));
+            b.Disc(V(.26f, .054f, .83f), .047f, .086f, 8, C(Steel));
+            b.Beam(V(-.40f, .062f, .85f), V(-.20f, .062f, .89f), .024f, .016f, 4, C(0x858a7c));
+            // The pole is a physical lantern support on the pack, not a marker.
+            b.Beam(V(.25f, .92f, -.36f), V(.32f, 1.83f, -.34f), .018f, .014f, 4, C(Steel));
+            b.Beam(V(.32f, 1.83f, -.34f), V(.39f, 1.80f, -.12f), .014f, .012f, 4, C(Rust));
+            b.Beam(V(.39f, 1.80f, -.12f), BulbCenter + V(0, .10f, 0), .009f, .009f, 3, C(Steel));
+            b.Cylinder(BulbCenter + V(0, .074f, 0), .084f, .047f, .035f, 6, C(0x6e6856));
+            b.Cylinder(BulbCenter - V(0, .098f, 0), .070f, .070f, .024f, 6, C(Steel));
+            for (int i = 0; i < 3; i++)
+            {
+                float a = i * Mathf.PI * 2 / 3;
+                Vector3 offset = V(Mathf.Sin(a) * .068f, 0, Mathf.Cos(a) * .068f);
+                b.Beam(BulbCenter + offset - V(0, .075f, 0), BulbCenter + offset + V(0, .079f, 0), .006f, .006f, 3, C(Steel));
+            }
             return merchant = b.Build("merchant");
         }
         public static Mesh MerchantLantern()
         {
             if (lantern != null) return lantern;
-            var b = new MeshBuilder(505); b.Rock(new Vector3(.3f, 1.82f, -.25f), .09f, Color.white, .1f, 1.2f, 0);
+            var b = new MeshBuilder(505);
+            b.Cylinder(BulbCenter - V(0, .068f, 0), .043f, .058f, .068f, 6, Color.white);
+            b.Cylinder(BulbCenter, .058f, .041f, .068f, 6, Color.white);
             return lantern = b.Build("lantern");
+        }
+
+        static void Pebble(MeshBuilder b, Vector3 at, Vector3 radii, int hex, int detail = 0)
+        {
+            b.Push(); b.Translate(at); b.Scale(radii.x, radii.y, radii.z);
+            b.Rock(Vector3.zero, 1, C(hex), .045f, 1, detail); b.Pop();
+        }
+
+        // Chamfered, optionally dented steel case. No primitive exceeds size.
+        static void Case(MeshBuilder b, Vector3 at, Vector3 size, int hex, bool dent = false)
+        {
+            float x = size.x * .5f, z = size.z * .5f, y = size.y * .5f;
+            float cut = Mathf.Min(x, z) * .16f;
+            Vector3[] rim = { V(-x + cut, 0, -z), V(-x, 0, -z + cut), V(-x, 0, z - cut), V(-x + cut, 0, z),
+                V(x - cut, 0, z), V(x, 0, z - cut), V(x, 0, -z + cut), V(x - cut, 0, -z) };
+            for (int i = 0; i < 8; i++)
+            {
+                int j = (i + 1) % 8;
+                Vector3 lo = at + rim[i] * .97f - V(0, y, 0), next = at + rim[j] * .97f - V(0, y, 0);
+                Vector3 hi = at + rim[i] + V(0, y, 0), highNext = at + rim[j] + V(0, y, 0);
+                if (dent)
+                {
+                    Vector3 mid = at + rim[i] * (i == 5 ? .91f : 1), midNext = at + rim[j] * (j == 5 ? .91f : 1);
+                    b.Quad(lo, next, midNext, mid, b.Jitter(hex));
+                    b.Quad(mid, midNext, highNext, hi, b.Jitter(hex));
+                }
+                else b.Quad(lo, next, highNext, hi, b.Jitter(hex));
+                b.Tri(at + V(0, y, 0), hi, highNext, b.Jitter(hex, .04f));
+                b.Tri(at - V(0, y, 0), next, lo, C(Soot));
+            }
         }
     }
 }

@@ -10,7 +10,9 @@ namespace Soul
         public const int None = 0, Rope = 1, Jet = 2, Cannon = 3, Magnet = 4, Toxic = 5, LabKeys = 6;
         /// body upgrades (not gates): Leap = 도약 관절, the Z0 elite 무리의 우두머리's leg part (double jump)
         public const int Leap = 7;
-        public static readonly string[] Names = { "없음", "로프 팔", "제트엔진", "캐논 포", "자석 다리", "내오염 코어", "연구소 열쇠 2개", "도약 관절" };
+        /// 독에 잠식된 코어: the Z6 elite 껍질 숙주's core (poison on every hit, violet blade)
+        public const int ToxicCore = 8;
+        public static readonly string[] Names = { "없음", "로프 팔", "제트엔진", "캐논 포", "자석 다리", "내오염 코어", "연구소 열쇠 2개", "도약 관절", "독에 잠식된 코어" };
         /// owned parts as a bit mask (bit = 1 << id). Gate 0 is always open.
         public static int owned;
         public static bool Has(int id) => id == None || (owned & (1 << id)) != 0;

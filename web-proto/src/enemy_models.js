@@ -1464,3 +1464,585 @@ export function createExecutor() {
   head.traverse(node => { if (node.isMesh) node.geometry.translate(0, -.08, .14); });
   return { root, radius: .95, height: 2.7, parts: { pelvis, torso, head, eye, core, armL, armR, legL, legR } };
 }
+
+// ---------- Z6: organisms eating machines. Geometry only; no runtime scaling. ----------
+// New paint keys do not alter any of the existing roster's materials.
+Object.assign(PALETTE, {
+  mireRust: [0x302a24, 0x856047], mireSkin: [0x29372b, 0x7b8961], mireFold: [0x29232f, 0x79637b],
+  mireSlime: [0x18291f, 0x526b3c], mireSac: [0x51465a, 0xa29a79],
+  mireWing: [0x455f54, 0xa5b8a0], mireHorn: [0x464637, 0xb0ad83],
+});
+
+function mireMaterials() {
+  const { metal, cloth } = materials();
+  const flesh = new THREE.MeshStandardMaterial({
+    vertexColors: true, flatShading: true, roughness: .47, metalness: 0,
+  });
+  return { metal, cloth, flesh };
+}
+
+function mirePath(pieces, points, start, end, paint, sides = 6) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const r0 = start + (end - start) * i / (points.length - 1);
+    const r1 = start + (end - start) * (i + 1) / (points.length - 1);
+    pieces.push([rod(points[i], points[i + 1], r0, r1, sides), paint]);
+  }
+}
+
+// Low-poly, open torus: dark recesses are separate geometry, never a painted disc
+// pasted over an intact hull. Rotation is baked into vertices, not into rig nodes.
+function mireRing(position, radius, tube, rotation = [0, 0, 0], segments = 10) {
+  const g = new THREE.TorusGeometry(radius, tube, 4, segments);
+  g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...rotation)));
+  return g.translate(...position);
+}
+
+function mireSheet(position, width, height, rotation = [0, 0, 0]) {
+  const g = plate([[-.5, -.42], [-.43, .5], [.19, .47], [.47, .30],
+    [.40, -.05], [.29, -.02], [.35, -.28], [.12, -.48], [-.05, -.39]], .045);
+  g.scale(width, height, 1);
+  g.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...rotation)));
+  return g.translate(...position);
+}
+
+function mireNest(pieces, center, radius, count = 5) {
+  for (let i = 0; i < count; i++) {
+    const a = i * 2.399, r = radius * (i === 0 ? 0 : .60);
+    const p = [center[0] + Math.cos(a) * r, center[1] + Math.sin(a) * r,
+      center[2] + radius * .25];
+    pieces.push([pebble(p, [radius * .48, radius * .65, radius * .43], 1),
+      i % 2 ? 'mireSac' : 'mireFold']);
+    pieces.push([pebble([p[0], p[1] + radius * .12, p[2] + radius * .38],
+      [radius * .14, radius * .18, radius * .06]), 'mireSlime']);
+  }
+}
+
+function mireCrawlerLegs(body, material, bug) {
+  const legs = [];
+  for (const side of [-1, 1]) for (let index = 0; index < 3; index++) {
+    const spread = (index - 1) * .12;
+    const hip = pivot(body, 'hip-' + side + '-' + index, [side * .22, .02, -.40 + index * .34]);
+    const knee = pivot(hip, 'knee-' + side + '-' + index, [side * .25, -.15, spread]);
+    const upper = [[pebble([0, 0, 0], bug ? [.04, .04, .05] : [.08, .075, .08]), bug ? 'mireFold' : 'mireRust']];
+    mirePath(upper, [[0, 0, 0], [side * .14, .04, spread * .4],
+      [side * .25, -.15, spread]], bug ? .025 : .05, bug ? .016 : .035, bug ? 'mireSkin' : 'iron', 5);
+    scrap(hip, bug ? 'thin-chitin-femur' : 'corroded-pipe-femur', upper, material);
+    const lower = [];
+    mirePath(lower, [[0, 0, 0], [side * .025, -.21, 0],
+      [side * .03, -.328, 0]], bug ? .018 : .033, .004, bug ? 'mireHorn' : 'mireRust', 5);
+    if (!bug) {
+      lower.push([mireSheet([side * .015, -.12, .04], .07, .20, [0, side * .3, side * .24]), 'iron']);
+      lower.push([rod([0, -.04, .02], [side * .05, -.20, .025], .016, .004, 5), 'mireSlime']);
+    }
+    scrap(knee, 'hooked-shin', lower, material);
+    legs.push({ hip, knee, side, index });
+  }
+  return legs;
+}
+
+/** Tiny gnawing flier. Pale opaque membranes suggest translucency without alpha sorting. */
+export function createSwarmBug() {
+  const { flesh } = mireMaterials();
+  const root = pivot(null, 'swarm-bug'), body = pivot(root, 'body', [0, .46, 0]);
+  const pieces = [
+    [pebble([0, .035, -.32], [.235, .225, .39], 1), 'mireFold'],
+    [pebble([0, .08, .14], [.18, .16, .24], 1), 'mireSkin'],
+  ];
+  for (let i = 0; i < 4; i++) {
+    pieces.push([mireRing([0, .035, -.54 + i * .13], .17 + i * .009, .014), 'mireSkin']);
+  }
+  for (const s of [-1, 1]) {
+    // Raised, leaf-shaped chitin wings, with their veins visible from above.
+    const wing = plate([[0, 0], [.12, .22], [.39, .35], [.50, .19],
+      [.37, -.08], [.10, -.20]], .012);
+    wing.rotateX(-Math.PI / 2).rotateZ(s * .55);
+    if (s < 0) wing.rotateY(Math.PI);
+    wing.translate(s * .10, .17, -.03);
+    pieces.push([wing, 'mireWing']);
+    mirePath(pieces, [[s * .10, .19, .02], [s * .30, .31, -.06],
+      [s * .49, .38, -.20]], .012, .004, 'mireSkin', 4);
+  }
+  scrap(body, 'swollen-abdomen-and-raised-wing-plates', pieces, flesh);
+  const core = glow(body, 'abdomen-vein', [0, .225, -.35], [.045, .025, .17], [.5, 1.2, .14]);
+  const head = pivot(body, 'head', [0, .21, .50]);
+  const mask = [[pebble([0, -.02, -.015], [.18, .14, .16], 1), 'mireSkin']];
+  for (const s of [-1, 1]) mirePath(mask, [[s * .08, .07, .02],
+    [s * .16, .17, .04], [s * .21, .19, .11]], .012, .003, 'mireHorn', 4);
+  scrap(head, 'gnawing-insect-head-and-feelers', mask, flesh);
+  const eye = glow(head, 'green-compound-eye', [0, .035, .13], [.12, .065, .045], [1.2, 2.4, .4]);
+  const jaw = pivot(head, 'jaw', [0, -.105, .035]), mandibles = [];
+  for (const s of [-1, 1]) mirePath(mandibles, [[s * .13, .015, 0],
+    [s * .15, -.025, .10], [s * .055, .005, .18]], .044, .005, 'mireHorn', 5);
+  scrap(jaw, 'paired-hook-mandibles', mandibles, flesh);
+  const legs = mireCrawlerLegs(body, flesh, true);
+  return { root, radius: .75, height: .9, parts: { body, head, jaw, eye, core, legs } };
+}
+
+/** Sludge ambusher: flat ruptured plates, hanging sludge and a recessed spit nozzle. */
+export function createSludgeCrawler() {
+  const { metal, cloth, flesh } = mireMaterials();
+  const root = pivot(null, 'sludge-crawler'), body = pivot(root, 'body', [0, .46, 0]);
+  const hull = [[box([.52, .12, .84], [0, -.09, -.14]), 'oil']];
+  for (let row = 0; row < 3; row++) {
+    for (const s of [-1, 1]) {
+      hull.push([mireSheet([s * .17, .07 + row * .014, -.46 + row * .27],
+        .35, .35, [-Math.PI / 2, 0, s * .07]), row % 2 ? 'iron' : 'mireRust']);
+      hull.push([pebble([s * .27, .11, -.46 + row * .27], [.025, .02, .025]), 'edge']);
+    }
+  }
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const z = -.44 + i * .27;
+    mirePath(hull, [[s * .12, .11 + i * .014, z - .08],
+      [s * .15, .115 + i * .014, z], [s * .20, .11 + i * .014, z + .10]],
+      .009, .003, 'oil', 4);
+  }
+  scrap(body, 'low-chewed-armour-deck', hull, metal);
+  const sludge = [];
+  for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
+    sludge.push([rag(0, 0, 0, .19, .22 + (i % 2) * .10, .015)
+      .rotateY(s * Math.PI / 2).translate(s * .30, .07, -.46 + i * .19), 'mireSlime']);
+    mirePath(sludge, [[s * .20, .12, -.43 + i * .19], [s * .26, .21, -.46 + i * .19],
+      [s * .29, .15, -.49 + i * .19]], .025, .003, 'mireSkin', 4);
+  }
+  scrap(body, 'dripping-sludge-skirts-and-algae', sludge, cloth);
+  const core = glow(body, 'polluted-engine-core', [0, .085, -.20], [.052, .045, .14], [.9, 1.6, .15]);
+  const head = pivot(body, 'head', [0, .21, .50]);
+  scrap(head, 'buried-rangefinder', [
+    [pebble([0, -.06, -.08], [.22, .13, .17]), 'mireSlime'],
+    [mireSheet([0, -.02, .075], .37, .20, [-.22, 0, 0]), 'mireRust'],
+    [mireRing([0, -.035, .11], .075, .025), 'iron'],
+  ], metal);
+  const eye = glow(head, 'yellow-green-eye', [0, -.035, .125], [.052, .044, .025], [1.6, 2.2, .3]);
+  const jaw = pivot(head, 'jaw', [0, -.105, .035]);
+  scrap(jaw, 'underslung-spitting-nozzle', [
+    [rod([0, -.035, -.04], [0, -.08, .135], .085, .065, 8), 'mireRust'],
+    [mireRing([0, -.08, .15], .062, .018), 'iron'],
+    [pebble([0, -.08, .151], [.043, .043, .006]), 'oil'],
+    [rod([-.12, 0, -.035], [-.10, -.09, .10], .027, .009), 'mireSlime'],
+    [rod([.12, 0, -.035], [.10, -.13, .09], .024, .005), 'mireSlime'],
+  ], flesh);
+  const legs = mireCrawlerLegs(body, metal, false);
+  return { root, radius: .75, height: .9, parts: { body, head, jaw, eye, core, legs } };
+}
+
+// Every Warden joint and its parent is copied exactly. Shapes carry the creature's
+// anatomy; Unity remains free to overwrite each joint's rotation every frame.
+function mireWardenRig(name) {
+  const root = pivot(null, name), pelvis = pivot(root, 'pelvis', [0, 1.05, 0]);
+  const torso = pivot(pelvis, 'torso', [0, .25, 0]);
+  const head = pivot(torso, 'head', [0, 1.12, .025]);
+  function arm(s, label) {
+    const shoulder = pivot(torso, label + '-shoulder', [s * .41, .80, 0]);
+    const elbow = pivot(shoulder, label + '-elbow', [s * .12, -.43, .015]);
+    const blade = pivot(elbow, label + '-blade', [s * .08, -.35, .045]);
+    return { shoulder, elbow, blade };
+  }
+  function leg(s, label) {
+    const hip = pivot(pelvis, label + '-hip', [s * .20, 0, 0]);
+    const knee = pivot(hip, label + '-knee', [s * .045, -.44, .14]);
+    const ankle = pivot(knee, label + '-ankle', [s * .025, -.37, -.31]);
+    return { hip, knee, ankle };
+  }
+  return { root, radius: .95, height: 2.7, parts: {
+    pelvis, torso, head, eye: null, core: null,
+    armL: arm(-1, 'left'), armR: arm(1, 'right'), legL: leg(-1, 'left'), legR: leg(1, 'right'),
+  } };
+}
+
+function mireRootLegs(parts, flesh, thick = .16) {
+  for (const s of [-1, 1]) {
+    const leg = s < 0 ? parts.legL : parts.legR;
+    const upper = [], lower = [], foot = [];
+    mirePath(upper, [[0, 0, 0], [s * .09, -.23, .02], [s * .045, -.44, .14]],
+      thick, thick * .83, 'mireSkin', 7);
+    mirePath(lower, [[0, 0, 0], [s * .07, -.19, -.09], [s * .025, -.37, -.31]],
+      thick * .9, thick * .72, 'mireFold', 7);
+    for (let i = 0; i < 3; i++) {
+      const x = s * (.15 + i * .09), z = -.22 + i * .22;
+      mirePath(foot, [[0, 0, 0], [s * .10, -.14, .03],
+        [x, -.175, z], [x + s * .10, -.217, z + .06]], thick * .63, .015, 'mireSkin', 5);
+    }
+    scrap(leg.hip, 'thick-upper-root', upper, flesh);
+    scrap(leg.knee, 'twisted-root-hock', lower, flesh);
+    scrap(leg.ankle, 'splayed-ground-rootlets', foot, flesh);
+  }
+}
+
+// Radial buttresses bridge the leg chains into one rooted organism.
+function mireRootSkirt(pelvis, flesh, mother) {
+  const roots = [];
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3 + .2, x = Math.cos(a), z = Math.sin(a);
+    mirePath(roots, [[x * .14, -.07, z * .12], [x * .32, -.48, z * .26],
+      [x * .49, -.83, z * .43], [x * .64, -1.025, z * .59]],
+      mother ? .23 : .14, .012, i % 2 ? 'mireSkin' : 'mireFold', 6);
+  }
+  scrap(pelvis, 'radial-root-buttresses', roots, flesh);
+}
+
+function mireVineArms(parts, flesh, kind) {
+  for (const s of [-1, 1]) {
+    const arm = s < 0 ? parts.armL : parts.armR;
+    if (kind === 'tentacle') {
+      // Small folded seams on the stalk retain all animated arm references.
+      scrap(arm.shoulder, 'folded-stalk-tendon-upper', [
+        [rod([-s * .29, .02, 0], [-s * .31, -.42, .015], .055, .045, 5), 'mireFold'],
+      ], flesh);
+      scrap(arm.elbow, 'folded-stalk-tendon-lower', [
+        [rod([-s * .43, 0, .005], [-s * .45, -.35, .035], .048, .035, 5), 'mireSkin'],
+      ], flesh);
+      scrap(arm.blade, 'folded-stalk-tendon-tip', [
+        [rod([-s * .53, 0, .005], [-s * .49, -.26, .07], .04, .008, 5), 'mireFold'],
+        [mireRing([-s * .49, -.12, .105], .035, .012, [0, 0, 0], 6), 'mireSac'],
+      ], flesh);
+      continue;
+    }
+    const r = kind === 'mother' ? .19 : .09;
+    const upper = [], fore = [], tip = [];
+    mirePath(upper, [[0, 0, 0], [s * .10, -.19, -.02], [s * .12, -.43, .015]],
+      r, r * .8, 'mireSkin', 7);
+    mirePath(fore, [[0, 0, 0], [s * .025, -.20, .08], [s * .08, -.35, .045]],
+      r * .85, r * .60, 'mireFold', 7);
+    const path = kind === 'vine' ? [[0, 0, 0], [s * .12, -.25, .10], [s * .14, -.52, .24],
+      [s * .04, -.70, .31], [-s * .12, -.78, .27]] :
+      [[0, 0, 0], [s * .08, -.18, .12], [s * .02, -.34, .22], [-s * .13, -.40, .19]];
+    mirePath(tip, path, r * .70, .008, 'mireSkin', 7);
+    for (let i = 0; i < 3; i++) tip.push([mireRing([s * .035, -.05 - i * .09, .07 + i * .045],
+      r * .32, r * .12, [-.25, 0, 0], 6), 'mireSac']);
+    scrap(arm.shoulder, 'living-vine-upper', upper, flesh);
+    scrap(arm.elbow, 'living-vine-fore', fore, flesh);
+    scrap(arm.blade, kind === 'vine' ? 'curled-vine-whip' : 'short-suckered-tentacle', tip, flesh);
+  }
+}
+
+/** Rooted turret: twisted stalk, lobed spore fruit, puckered upward-facing mouth. */
+export function createSporeVine() {
+  const { flesh } = mireMaterials(), model = mireWardenRig('spore-vine'), p = model.parts;
+  scrap(p.pelvis, 'root-knot', [[pebble([0, -.05, 0], [.27, .25, .26], 1), 'mireFold']], flesh);
+  const trunk = [];
+  for (const s of [-1, 1]) mirePath(trunk, [[s * .13, -.26, 0], [-s * .09, .15, -.04],
+    [s * .14, .48, .02], [s * .07, .82, -.04], [0, 1.10, 0]], .14, .095, 'mireSkin', 7);
+  for (let i = 0; i < 4; i++) trunk.push([pebble([Math.sin(i * 2) * .16, .12 + i * .20, .13],
+    [.11, .14, .09]), 'mireFold']);
+  scrap(p.torso, 'braided-living-trunk', trunk, flesh);
+  p.core = glow(p.torso, 'sap-heart', [0, .45, .16], [.065, .16, .04], [.55, 1.25, .2]);
+  const pod = [[pebble([0, -.09, -.10], [.40, .34, .29], 1), 'mireSkin']];
+  for (let i = 0; i < 7; i++) {
+    const a = i * Math.PI * 2 / 7;
+    pod.push([pebble([Math.cos(a) * .25, -.12 + Math.sin(a) * .20, .09],
+      [.15, .18, .16], 1), i % 2 ? 'mireSac' : 'mireFold']);
+  }
+  pod.push([mireRing([0, -.10, .26], .16, .06, [-.42, 0, 0], 9), 'mireFold']);
+  pod.push([pebble([0, -.12, .23], [.13, .115, .04]), 'oil']);
+  for (let i = 0; i < 6; i++) {
+    const a = i * Math.PI / 3;
+    pod.push([rod([Math.cos(a) * .145, -.10 + Math.sin(a) * .13, .29],
+      [Math.cos(a) * .10, -.10 + Math.sin(a) * .085, .31], .027, .01, 5), 'mireHorn']);
+  }
+  scrap(p.head, 'swollen-spore-pod-and-puckered-lips', pod, flesh);
+  p.eye = glow(p.head, 'spore-gland', [.19, .13, .17], [.065, .055, .035], [1.4, 2.6, .5]);
+  mireVineArms(p, flesh, 'vine'); mireRootLegs(p, flesh); mireRootSkirt(p.pelvis, flesh, false);
+  return model;
+}
+
+// Mechanical arm ends are scoops with an OPEN top/front, a dark inner floor,
+// side cheeks and projecting bucket teeth. They remain attached to blade pivots.
+function mireBucketArms(parts, metal, giant) {
+  for (const s of [-1, 1]) {
+    const arm = s < 0 ? parts.armL : parts.armR;
+    scrap(arm.shoulder, 'dredge-lifting-linkage', [
+      [bearing([0, 0, 0], .13), 'mireRust'],
+      [rod([0, 0, 0], [s * .12, -.43, .015], .075, .065), 'iron'],
+      [box([.12, .32, .13], [s * .07, -.22, -.035], [0, 0, s * .25]), 'mireRust'],
+      [rod([-s * .06, -.08, .08], [s * .04, -.37, .09], .027), 'edge'],
+    ], metal);
+    scrap(arm.elbow, 'exposed-hydraulic-ram-and-hose', [
+      [bearing([0, 0, 0], .10), 'iron'],
+      [rod([0, 0, 0], [s * .08, -.35, .045], .065, .04), 'mireRust'],
+      [rod([-s * .055, -.04, .06], [s * .015, -.30, .10], .022), 'edge'],
+      [rod([s * .07, -.04, -.09], [s * .13, -.32, -.06], .025), 'oil'],
+    ], metal);
+    const scoop = [];
+    if (s > 0 || giant) {
+      scoop.push([box([.34, .06, .40], [0, -.20, .13], [-.14, 0, 0]), 'mireRust']);
+      scoop.push([box([.27, .015, .29], [0, -.16, .12], [-.14, 0, 0]), 'oil']);
+      scoop.push([box([.34, .21, .06], [0, -.08, -.045], [-.25, 0, 0]), 'iron']);
+      for (const edge of [-1, 1]) scoop.push([plate([[-.10, .03], [.12, -.13],
+        [.29, -.18], [.28, -.24], [-.12, -.22]], .04).rotateY(Math.PI / 2)
+        .translate(edge * .15, 0, .05), 'mireRust']);
+      for (let i = 0; i < 4; i++) {
+        scoop.push([rod([-.12 + i * .08, -.20, .28], [-.12 + i * .08, -.24, .42],
+          .032, .008, 4), 'edge']);
+        scoop.push([pebble([-.12 + i * .08, -.11, -.005], [.022, .022, .022]), 'mireRust']);
+      }
+    } else {
+      mirePath(scoop, [[0, 0, 0], [-.10, -.20, .05], [-.12, -.32, .21],
+        [.01, -.37, .27]], .075, .012, 'mireRust');
+      scoop.push([rod([.06, -.04, .03], [.11, -.24, .19], .05, .008), 'edge']);
+    }
+    scrap(arm.blade, giant ? 'industrial-grab-bucket' : s > 0 ? 'toothed-dredging-bucket' : 'broken-grab-hook', scoop, metal);
+  }
+}
+
+function mireMachineLegs(parts, metal) {
+  for (const s of [-1, 1]) {
+    const leg = s < 0 ? parts.legL : parts.legR;
+    scrap(leg.hip, 'short-load-bearing-piston', [
+      [rod([0, 0, 0], [s * .045, -.44, .14], .14, .11, 8), 'mireRust'],
+      [mireSheet([s * .02, -.17, .15], .25, .34, [-.18, 0, 0]), 'iron'],
+    ], metal);
+    scrap(leg.knee, 'sludge-caked-track-link', [
+      [rod([0, 0, 0], [s * .025, -.37, -.31], .105, .07, 7), 'oil'],
+      [rod([s * .10, -.015, -.02], [s * .115, -.32, -.25], .029), 'edge'],
+      [pebble([0, -.22, -.18], [.14, .16, .13]), 'mireSlime'],
+    ], metal);
+    const foot = [[box([.32, .12, .45], [s * .045, -.17, .08]), 'mireRust']];
+    for (let i = 0; i < 4; i++) foot.push([box([.34, .045, .055],
+      [s * .045, -.10, -.07 + i * .10]), 'iron']);
+    scrap(leg.ankle, 'stubby-ribbed-mud-shoe', foot, metal);
+  }
+}
+
+function mireDredger(giant) {
+  const { metal, flesh, cloth } = mireMaterials();
+  const model = mireWardenRig(giant ? 'giant-dredger' : 'dredger'), p = model.parts;
+  scrap(p.pelvis, 'half-sunk-pump-sump', [
+    [pebble([0, -.07, -.07], [.46, .31, .40], 1), 'oil'],
+    [box([.65, .20, .55], [0, .02, -.08], [0, 0, -.04]), 'mireRust'],
+  ], metal);
+  const hull = [
+    [box([.63, .20, .57], [0, .02, -.04]), 'oil'],
+    [mireSheet([0, .64, -.20], .77, .73, [-Math.PI / 2, 0, .05]), 'mireRust'],
+    [mireSheet([-.34, .32, -.12], .50, .57, [0, -.9, .07]), 'iron'],
+    [mireSheet([.32, .27, -.18], .45, .43, [0, 1.1, -.12]), 'mireRust'],
+  ];
+  // Segmented rail frame, with actual missing side panels around the nest.
+  for (const s of [-1, 1]) {
+    mirePath(hull, [[s * .35, -.11, .17], [s * .44, .20, .12],
+      [s * .40, .57, -.04], [s * .23, .75, -.19]], .045, .025, 'iron');
+    mirePath(hull, [[s * .28, .52, -.28], [s * .32, .28, -.36],
+      [s * .27, .02, -.30]], .045, .032, 'oil', 7);
+    for (let i = 0; i < 4; i++) hull.push([pebble([s * .32, .59, -.40 + i * .16],
+      [.028, .024, .025]), 'edge']);
+  }
+  hull.push([mireRing([.23, .37, .19], .18, .025, [0, .3, 0], 9), 'mireRust']);
+  hull.push([pebble([.23, .37, .13], [.17, .17, .045]), 'oil']);
+  if (giant) {
+    // Broken crane boom: triangular open truss, not an unbroken box on the back.
+    for (const s of [-1, 1]) {
+      mirePath(hull, [[s * .25, .34, -.33], [s * .24, .88, -.45],
+        [s * .10, 1.23, -.43]], .045, .024, 'mireRust');
+      for (let i = 0; i < 3; i++) hull.push([rod([s * .24, .53 + i * .21, -.40],
+        [-s * .20, .73 + i * .18, -.43], .018), 'iron']);
+    }
+    for (let i = 0; i < 9; i++) hull.push([mireRing([-.36, .72 - i * .066,
+      .08 + Math.sin(i / 8 * Math.PI) * .09], .035, .009, [0, i % 2 * Math.PI / 2, 0], 6), 'mireRust']);
+    hull.push([mireSheet([.24, .71, -.33], .31, .34, [-.65, .25, -.18]), 'iron']);
+  }
+  scrap(p.torso, 'gnawed-open-pump-hull' + (giant ? '-and-broken-crane' : ''), hull, metal);
+  const growth = [];
+  mireNest(growth, [.22, .36, .20], giant ? .17 : .14, giant ? 8 : 5);
+  mireNest(growth, [-.30, .61, -.20], .12, giant ? 6 : 3);
+  if (giant) mireNest(growth, [.30, .19, -.27], .15, 5);
+  scrap(p.torso, 'swarm-nests-eating-through-hull', growth, flesh);
+  scrap(p.torso, 'sludge-hanging-from-torn-seams', [
+    [rag(-.30, .29, .13, .16, .38, -.04), 'mireSlime'],
+    [rag(.28, .16, .17, .20, .29, .02), 'mireSlime'],
+  ], cloth);
+  p.core = glow(p.torso, 'exposed-pump-core', [-.18, .31, .20], [.065, .11, .045], [1.4, .85, .16]);
+  // Entire open funnel is tilted upward 0.60 radians for the gameplay camera.
+  const intake = [], r = giant ? .43 : .34;
+  const funnel = new THREE.CylinderGeometry(r, r * .62, .26, 12, 1, true);
+  funnel.rotateX(Math.PI / 2);
+  intake.push([funnel, 'mireRust']);
+  const inner = new THREE.CylinderGeometry(r - .025, r * .62 - .018, .26, 12, 1, true);
+  inner.rotateX(Math.PI / 2);
+  const indices = inner.index;
+  for (let i = 0; i < indices.count; i += 3) {
+    const a = indices.getX(i); indices.setX(i, indices.getX(i + 2)); indices.setX(i + 2, a);
+  }
+  intake.push([inner, 'mireRust']);
+  intake.push([mireRing([0, 0, .13], r, .045, [0, 0, 0], 12), 'iron']);
+  intake.push([mireRing([0, 0, -.13], r * .62, .025), 'mireRust']);
+  intake.push([pebble([0, 0, -.16], [r * .63, r * .63, .015]), 'oil']);
+  for (let i = 0; i < 12; i++) {
+    const a = i * Math.PI / 6;
+    intake.push([rod([Math.cos(a) * r, Math.sin(a) * r, .13],
+      [Math.cos(a) * r * .78, Math.sin(a) * r * .78, .15], .025, .009, 4), 'edge']);
+    intake.push([pebble([Math.cos(a) * (r + .025), Math.sin(a) * (r + .025), .14],
+      [.018, .018, .018]), 'mireRust']);
+  }
+  for (const x of [-.08, .08]) intake.push([rod([x, -.15, -.10], [x, .15, -.10], .013), 'iron']);
+  for (const item of intake) item[0].rotateX(-.60).translate(0, -.30, .12);
+  scrap(p.head, 'open-toothed-intake-funnel', intake, metal);
+  p.eye = glow(p.head, 'intake-status-lamp', [-r * .65, -.04, .25], [.045, .04, .03], [2.4, 1.4, .3]);
+  mireBucketArms(p, metal, giant); mireMachineLegs(p, metal);
+  return model;
+}
+
+export function createDredger() { return mireDredger(false); }
+export function createGiantDredger() { return mireDredger(true); }
+
+/** Snapping-turtle host. The clear crown supports Unity's three runtime poison sacs. */
+export function createShellHost() {
+  const { flesh, metal } = mireMaterials();
+  const root = pivot(null, 'shell-host'), body = pivot(root, 'body', [0, .5, 0]);
+  const shell = [
+    [pebble([0, -.04, -.08], [.55, .20, .58], 1), 'mireFold'],
+    [new THREE.SphereGeometry(1, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+      .scale(.65, .29, .64).translate(0, .09, -.07), 'mireSkin'],
+    [mireRing([0, .09, -.07], .61, .045, [Math.PI / 2, 0, 0], 16), 'mireHorn'],
+  ];
+  // All relief starts outside radius .44; central crown/sac ring radius .315
+  // remains smooth, with no barnacle, machine plate or ridge occupying the sacs.
+  for (let i = 0; i < 14; i++) {
+    const a = i * Math.PI * 2 / 14;
+    const x = Math.cos(a), z = Math.sin(a);
+    mirePath(shell, [[x * .44, .29, z * .44 - .07], [x * .54, .23, z * .53 - .07],
+      [x * .64, .11, z * .62 - .07]], .025, .045, i % 3 ? 'mireHorn' : 'mireFold', 5);
+    if (i % 2 === 0) {
+      shell.push([mireRing([x * .53, .24, z * .52 - .07], .045, .018,
+        [Math.PI / 2, 0, 0], 7), 'mireSac']);
+      shell.push([pebble([x * .53, .235, z * .52 - .07], [.027, .012, .027]), 'oil']);
+    }
+  }
+  scrap(body, 'huge-ridged-dome-and-barnacle-skirt', shell, flesh);
+  const wreck = [];
+  for (let i = 0; i < 4; i++) {
+    const a = .7 + i * 1.55, x = Math.cos(a) * .51, z = Math.sin(a) * .50 - .07;
+    wreck.push([mireSheet([x, .24, z], .17, .23, [-Math.PI / 2, a, .25]), i % 2 ? 'mireRust' : 'iron']);
+    wreck.push([pebble([x, .27, z], [.022, .018, .022]), 'mireRust']);
+  }
+  scrap(body, 'half-swallowed-riveted-shell-plates', wreck, metal);
+  const core = glow(body, 'violet-flank-gland', [-.48, .055, .19], [.035, .045, .07], [1.2, .3, 1.7]);
+  const head = pivot(body, 'head', [0, .14, .50]);
+  scrap(head, 'thick-neck-and-snapping-beak', [
+    [pebble([0, -.09, -.16], [.23, .18, .27], 1), 'mireFold'],
+    [pebble([0, -.015, .015], [.19, .14, .16], 1), 'mireSkin'],
+    [plate([[-.16, .045], [.13, .06], [.14, -.05], [.055, -.085],
+      [0, -.15], [-.05, -.075], [-.14, -.06]], .09, .13), 'mireHorn'],
+    [mireSheet([-.12, .06, -.03], .14, .16, [-.5, -.4, .2]), 'mireRust'],
+  ], flesh);
+  const eye = glow(head, 'violet-eye', [-.12, .06, .105], [.047, .035, .025], [1.6, .4, 2.4]);
+  const throat = glow(head, 'throat', [0, -.145, -.035], [.047, .043, .025], [1.6, .4, 2.4]);
+  throat.visible = false;
+  const jaw = pivot(head, 'jaw', [0, -.085, .035]);
+  scrap(jaw, 'heavy-hooked-lower-beak', [
+    [pebble([0, -.055, .035], [.15, .075, .125]), 'mireFold'],
+    [rod([0, -.06, .12], [0, .015, .17], .07, .008, 5), 'mireHorn'],
+  ], flesh);
+  const legs = [];
+  for (const [side, index] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
+    const front = index === 0;
+    const hip = pivot(body, 'hip-' + side + '-' + index, [side * .17, -.01, front ? .30 : -.35]);
+    const ko = [side * .01, front ? -.17 : -.16, front ? -.06 : .09];
+    const ao = [0, front ? -.21 : -.17, front ? .03 : -.13];
+    const knee = pivot(hip, 'knee-' + side + '-' + index, ko);
+    const ankle = pivot(knee, 'ankle-' + side + '-' + index, ao);
+    scrap(hip, 'columnar-turtle-shoulder', [
+      [rod([0, 0, 0], ko, .15, .13, 7), 'mireFold'],
+      [pebble([side * .09, -.05, 0], [.16, .12, .14]), 'mireSkin'],
+    ], flesh);
+    scrap(knee, 'short-scaled-shin', [
+      [rod([0, 0, 0], ao, .13, .10, 7), 'mireSkin'],
+      [mireSheet([side * .09, -.06, .04], .14, .15, [0, side * .8, 0]), 'mireRust'],
+    ], flesh);
+    const floor = front ? -.11 : -.16;
+    const foot = [[pebble([side * .035, floor + .06, .035], [.14, .06, .15], 1), 'mireFold']];
+    for (let i = -1; i <= 1; i++) foot.push([rod([i * .065, floor + .05, .12],
+      [i * .075, floor + .016, .22 - Math.abs(i) * .025], .034, .003, 5), 'mireHorn']);
+    scrap(ankle, 'broad-clawed-turtle-foot', foot, flesh);
+    legs.push({ hip, knee, ankle, side, index });
+  }
+  return { root, radius: .75, height: .9, parts: { body, head, jaw, eye, core, legs, throat } };
+}
+
+/** Ancient mother: split vertical maw, eggs and machinery swallowed into living folds. */
+export function createMireMother() {
+  const { flesh, metal } = mireMaterials(), model = mireWardenRig('mire-mother'), p = model.parts;
+  scrap(p.pelvis, 'ancient-root-bulb', [
+    [pebble([0, -.13, -.05], [.53, .36, .48], 1), 'mireFold'],
+  ], flesh);
+  const mass = [
+    [pebble([0, .35, -.18], [.59, .76, .42], 2), 'mireSkin'],
+    [pebble([-.38, .30, .02], [.28, .55, .37], 1), 'mireFold'],
+    [pebble([.38, .33, .02], [.28, .57, .36], 1), 'mireSkin'],
+  ];
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      const y = -.01 + i * .17, x = s * (.48 + Math.sin(i) * .035);
+      mass.push([pebble([x, y, .17], [.14, .18, .15], 1), 'mireSac']);
+      mirePath(mass, [[x, y + .14, .20], [x + s * .045, y, .29],
+        [x, y - .12, .22]], .012, .006, 'mireFold', 5);
+    }
+    mirePath(mass, [[s * .12, .83, -.47], [s * .32, .62, -.48],
+      [s * .43, .25, -.43], [s * .30, -.15, -.36]], .032, .012, 'mireSac', 5);
+  }
+  scrap(p.torso, 'swollen-mother-body-flank-eggs-and-veins', mass, flesh);
+  const swallowed = [
+    [rod([-.45, .48, -.16], [-.45, .81, -.20], .16, .16, 9), 'mireRust'],
+    [mireRing([-.45, .82, -.20], .145, .021, [Math.PI / 2, 0, 0]), 'iron'],
+    [mireSheet([.54, .41, .24], .27, .47, [0, .75, -.13]), 'iron'],
+    [box([.20, .11, .03], [.55, .51, .285], [0, .75, -.13]), 'oil'],
+    [box([.07, .018, .025], [.55, .34, .32], [0, .75, 0]), 'edge'],
+  ];
+  mirePath(swallowed, [[.25, .80, -.29], [.42, .92, -.31], [.45, .81, -.41],
+    [.43, .66, -.45]], .055, .045, 'mireRust', 7);
+  for (let i = 0; i < 4; i++) swallowed.push([pebble([.52, .22 + i * .09, .31],
+    [.019, .019, .019]), 'mireRust']);
+  scrap(p.torso, 'swallowed-tank-car-door-and-bent-pipes', swallowed, metal);
+  // Back palate ends BEHIND the recessed core. Two separate lobes leave a
+  // continuous vertical aperture: no solid ellipsoid fills the weak-spot mouth.
+  const maw = [[pebble([0, -.34, -.02], [.27, .51, .10], 1), 'oil']];
+  for (const s of [-1, 1]) {
+    maw.push([pebble([s * .33, -.26, .13], [.26, .50, .30], 2), 'mireSkin']);
+    mirePath(maw, [[s * .07, .17, .23], [s * .19, -.03, .40],
+      [s * .18, -.39, .46], [s * .12, -.69, .36], [s * .025, -.81, .20]],
+      .075, .045, 'mireFold', 7);
+    for (let i = 0; i < 8; i++) {
+      const y = .04 - i * .095, x = s * (.14 + Math.sin(i / 7 * Math.PI) * .045);
+      maw.push([rod([x, y, .41], [x * .37, y - .035, .39],
+        .029, .002, 5), 'mireHorn']);
+    }
+    for (let i = 0; i < 3; i++) maw.push([pebble([s * .32, -.03 - i * .22, .395],
+      [.045, .07, .018]), 'mireSac']);
+  }
+  scrap(p.head, 'split-vertical-maw-fleshy-lips-and-teeth', maw, flesh);
+  p.core = glow(p.torso, 'deep-mouth-weak-spot', [0, .72, .30], [.065, .15, .045], [.9, 1.9, .35]);
+  p.eye = glow(p.head, 'ancient-green-eye', [-.29, .04, .36], [.055, .04, .025], [1.4, 2.6, .5]);
+  // Small biological vein knots, deliberately much dimmer than the mouth core.
+  glow(p.torso, 'living-vein-left', [-.49, .63, .22], [.015, .11, .015], [.25, .55, .10]);
+  glow(p.torso, 'living-vein-right', [.48, .24, .27], [.015, .09, .015], [.30, .45, .12]);
+  mireVineArms(p, flesh, 'mother'); mireRootLegs(p, flesh, .24); mireRootSkirt(p.pelvis, flesh, true);
+  return model;
+}
+
+/** A single tapered limb; retained Warden arms are small folded lateral tendrils. */
+export function createMireTentacle() {
+  const { flesh } = mireMaterials(), model = mireWardenRig('mire-tentacle'), p = model.parts;
+  const base = [];
+  mirePath(base, [[0, -.93, .02], [-.05, -.65, -.02], [.04, -.30, -.03], [0, .24, 0]],
+    .24, .19, 'mireFold', 8);
+  for (const s of [-1, 1]) mirePath(base, [[s * .10, -.75, 0],
+    [s * .28, -.93, -.13], [s * .42, -1.02, -.20]], .11, .012, 'mireSkin', 5);
+  scrap(p.pelvis, 'tentacle-root-and-basal-folds', base, flesh);
+  const stalk = [];
+  mirePath(stalk, [[0, -.25, 0], [.07, .12, -.03], [-.04, .43, .02],
+    [.045, .76, -.01], [0, 1.12, .025]], .21, .10, 'mireSkin', 9);
+  for (let i = 0; i < 7; i++) {
+    const y = -.08 + i * .16, r = .19 - i * .013;
+    stalk.push([mireRing([.02, y, 0], r, .018, [Math.PI / 2, 0, 0], 8), 'mireFold']);
+    stalk.push([mireRing([.015, y, r * .94], .045 - i * .003, .014, [0, 0, 0], 7), 'mireSac']);
+  }
+  scrap(p.torso, 'segmented-tapering-suckered-stalk', stalk, flesh);
+  const hook = [];
+  mirePath(hook, [[0, 0, 0], [.06, .12, .05], [.13, .16, .16],
+    [.15, .07, .26], [.10, -.10, .31]], .11, .006, 'mireFold', 8);
+  hook.push([mireRing([.08, .07, .14], .04, .012, [0, .4, 0], 7), 'mireSac']);
+  scrap(p.head, 'curled-tentacle-tip', hook, flesh);
+  p.eye = glow(p.head, 'tip-sensory-nodule', [.10, .09, .24], [.025, .025, .025], [.5, 1.1, .16]);
+  // Parent stays torso like Warden; this local offset puts the cuttable bulb at y=.24.
+  p.core = glow(p.torso, 'cuttable-root-bulb', [0, -1.06, .19], [.15, .16, .105], [1.4, 2.6, .5]);
+  mireVineArms(p, flesh, 'tentacle'); mireRootLegs(p, flesh, .075);
+  return model;
+}

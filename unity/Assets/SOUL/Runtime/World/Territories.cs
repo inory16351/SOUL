@@ -13,6 +13,8 @@ namespace Soul
         public int zone; public string name, kind; public Vector2 want, c; public float r;
         public string[] members;      // one entry per monster (type key)
         public int critters;          // prey organisms living here (재 쥐)
+        /// keep the authored centre (an elite sitting in its sludge pool: Place would nudge it onto dry ground)
+        public bool pinned;
         // runtime (SoulGame.Ecology)
         public bool placed, spawned; public bool[] dead;
         public readonly List<Enemy> live = new List<Enemy>();
@@ -51,7 +53,38 @@ namespace Soul
             T("남쪽 가장자리 무리", "pack", 20, -230, 35, 0, "crawler", "crawler", "ashMite", "ashMite"),
         };
 
-        static Territories() { AddFiller(); }
+        static Territory T6(string name, string kind, float x, float z, float r, int critters, params string[] members)
+        { var t = T(name, kind, x, z, r, critters, members); t.zone = 6; return t; }
+
+        // Z6 독성 늪 (기획서/Z6_독성늪_보스_생태계.md, 2026-11-09): organisms eat machines here. 떼벌레 swarms gnaw half-sunk
+        // dredgers, sludge crawlers wait under the surface, spore vines guard the lanes, frogs (critters) hop the banks.
+        static void AddMire()
+        {
+            All.AddRange(new[]
+            {
+                // 슬러지 둑 (entrances, pod)
+                T6("둑 떼벌레", "pack", 1250, 610, 30, 0, "swarmBug", "swarmBug", "swarmBug", "swarmBug", "swarmBug"),
+                T6("둑 매복", "guard", 1400, 640, 28, 0, "sludgeCrawler", "sludgeCrawler"),
+                T6("둑 개구리 늪", "nest", 1170, 560, 25, 5, "swarmBug", "swarmBug", "swarmBug"),
+                T6("둑 포자 길목", "turret", 1460, 560, 14, 0, "sporeVine"),
+                // 기계 무덤 (bank -> village): dredgers being eaten by swarms
+                T6("기계 무덤", "guard", 1150, 650, 35, 0, "dredger", "swarmBug", "swarmBug", "swarmBug", "swarmBug"),
+                T6("준설기 무덤", "lair", 1250, 720, 45, 0, "giantDredger", "swarmBug", "swarmBug", "swarmBug", "swarmBug", "swarmBug"),
+                // 가라앉은 마을
+                T6("마을 지붕 매복", "guard", 980, 830, 30, 0, "sludgeCrawler", "sludgeCrawler", "sludgeCrawler"),
+                T6("마을 포자 길목", "turret", 1110, 890, 14, 0, "sporeVine"),
+                T6("마을 포자 북", "turret", 1170, 770, 14, 0, "sporeVine"),
+                T6("마을 떼", "pack", 990, 960, 30, 2, "swarmBug", "swarmBug", "swarmBug", "swarmBug", "swarmBug"),
+                T6("마을 준설기", "guard", 1060, 990, 30, 0, "dredger", "swarmBug", "swarmBug"),
+                T6("껍질 숙주 웅덩이", "lair", MirePools.Host.x, MirePools.Host.y, 30, 0, "shellHost"),
+                // 보스 지대 가는 길
+                T6("파이프 다리", "guard", 1390, 860, 30, 0, "sludgeCrawler", "sludgeCrawler"),
+                T6("둥지 앞 포자", "turret", 1210, 880, 14, 0, "sporeVine"),
+            });
+            foreach (var t in All) if (t.members.Length == 1 && t.members[0] == "shellHost") t.pinned = true;
+        }
+
+        static Territories() { AddFiller(); AddMire(); }
         /// filler territories (2026-11-09, user: "맵 넓이에 비해 할 게 없음, 몬스터 개체수 늘려"): a jittered 110 m grid over
         /// the open parts of Z0 adds a territory wherever the hand-made table leaves a gap, typed by district
         static void AddFiller()
@@ -107,6 +140,7 @@ namespace Soul
         {
             if (t.placed) return;
             t.placed = true; t.dead = new bool[t.members.Length]; t.c = t.want;
+            if (t.pinned) return;
             for (int pass = 0; pass < 2; pass++)
                 for (float r = 0; r <= 90; r += 3)
                 {
@@ -132,6 +166,23 @@ namespace Soul
         }
     }
 
+    // Z6 authored sludge pools (Terrain: deep toxic water inside r). The shell host sits in the middle of its pool;
+    // the hidden ledge (Caches) stands just east of it, reachable only from the dead shell.
+    public static class MirePools
+    {
+        public static readonly Vector2 Host = new Vector2(1050, 760), Ledge = new Vector2(1050 + 11, 760);
+        public const float HOST_R = 8.5f;
+        public struct Pool { public Vector2 c; public float r; }
+        public static readonly Pool[] All = { new Pool { c = Host, r = HOST_R } };
+        /// 0..1 inside a pool (1 in the middle, eased to 0 over the last 2 m)
+        public static float At(float x, float z)
+        {
+            float k = 0;
+            foreach (var p in All) { float d = (new Vector2(x, z) - p.c).magnitude; if (d < p.r) k = Mathf.Max(k, Mathf.Clamp01((p.r - d) / 2)); }
+            return k;
+        }
+    }
+
     // Supply caches on small authored mesas (2.1 m cliffs all round: only the double jump from 도약 관절 gets up).
     // Terrain raises the mesa; SoulGame.Ecology draws and opens the crate. No Terrain calls here (Terrain reads this).
     public static class Caches
@@ -141,6 +192,8 @@ namespace Soul
         {
             new Spot { c = new Vector2(126, 97), r = 5, rise = 2.1f, scrap = 60, name = "광장 높은 단 보급 상자" },
             new Spot { c = new Vector2(-338, 206), r = 5, rise = 2.1f, scrap = 60, name = "거리 북쪽 높은 단 보급 상자" },
+            // Z6: the hidden ledge beside 껍질 숙주's pool (3.5 m: only from its dead shell, with the double jump)
+            new Spot { c = MirePools.Ledge, r = 4.5f, rise = 3.5f, scrap = 60, name = "급수탑 꼭대기 숨은 단" },
         };
         public static readonly bool[] opened = new bool[Spots.Length];
     }

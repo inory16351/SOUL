@@ -91,6 +91,7 @@ namespace Soul
         static float ToxicWeight(float x, float z)
         {
             if (ZoneWorld.At(x, z) != 6) return 0;
+            float pool = MirePools.At(x, z); if (pool > 0) return Mathf.Max(pool, Sim.SmoothStep(P(x, z, .018f, 5.7f) + .2f * P(x, z, .07f, 1.4f), .75f, .79f));
             float deep = P(x, z, .018f, 5.7f) + .2f * P(x, z, .07f, 1.4f);
             return Sim.SmoothStep(deep, .75f, .79f);
         }
@@ -364,6 +365,8 @@ namespace Soul
                     float deep = P(x, z, .018f, 5.7f) + .2f * P(x, z, .07f, 1.4f);
                     if (deep > .74f) { d = Mathf.Max(d, .7f * Sim.SmoothStep(deep, .74f, .8f)); if (deep > .76f) type = WATER_TOXIC; }
                     wet = Mathf.Max(wet, Bank(deep, .74f, .05f));
+                    float pool = MirePools.At(x, z);   // authored elite pools (껍질 숙주)
+                    if (pool > 0) { d = Mathf.Max(d, .8f * pool); type = WATER_TOXIC; wet = 1; }
                     break;
                 case 1: n = P(x, z, .08f, 2.2f); d = .2f * Sim.SmoothStep(n, .77f, .8f); type = WATER_CLEAN; wet = Bank(n, .77f, .05f); break;
                 case 0: n = P(x, z, .07f, 6.1f); d = .18f * Sim.SmoothStep(n, .8f, .83f); type = WATER_CLEAN; wet = Bank(n, .8f, .05f); break;

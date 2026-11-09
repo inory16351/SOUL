@@ -82,7 +82,7 @@ export async function exportAll() {
 
   // ---- enemies: fresh instances
   const em = await import('/src/enemy_models.js');
-  for (const [name, make] of [['crawler', em.createCrawler], ['warden', em.createWarden], ['ashWarden', em.createAshWarden], ['ashMite', em.createAshMite], ['sentry', em.createSentry], ['houndAlpha', em.createHoundAlpha], ['executor', em.createExecutor]]) {
+  for (const [name, make] of [['crawler', em.createCrawler], ['warden', em.createWarden], ['ashWarden', em.createAshWarden], ['ashMite', em.createAshMite], ['sentry', em.createSentry], ['houndAlpha', em.createHoundAlpha], ['executor', em.createExecutor], ['swarmBug', em.createSwarmBug], ['sludgeCrawler', em.createSludgeCrawler], ['sporeVine', em.createSporeVine], ['dredger', em.createDredger], ['giantDredger', em.createGiantDredger], ['shellHost', em.createShellHost], ['mireMother', em.createMireMother], ['mireTentacle', em.createMireTentacle]]) {
     const m = make(), eids = new Map();
     const t = serializeTree(m.root, { ids: eids });
     out.push(await post(name + '.json', { tree: t, radius: m.radius, height: m.height, parts: partsRefs(m.parts, eids) }));

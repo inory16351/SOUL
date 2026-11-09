@@ -58,6 +58,7 @@ namespace Soul
         void EliteSetup(Territory t, Enemy e)
         {
             if (!elitesHooked) EliteHooks();
+            if (MireElite(t, e)) return;   // Z6 elites (SoulGame.Mire)
             var r = new EliteRig { e = e, t = t };
             r.glowMat = Mats.Unlit(new Color(.4f, 1.6f, 2.2f, 1), Blend.Opaque);
             if (glowBlob == null) { var gb = new MeshBuilder(91); gb.Rock(Vector3.zero, .5f, Color.white, .25f, 1, 1); glowBlob = gb.Build("elite glow"); }

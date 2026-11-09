@@ -45,13 +45,14 @@ namespace Soul
             {
                 float d = Sim.FlatY(a.center - p).magnitude; bool open = !ZoneState.Purified(a.zone);
                 if (boss == null && open && d < a.radius + 60) boss = enemies.SpawnDormant(a.boss, a.center, a.entranceYaw);
-                else if (boss != null && boss.state == "dormant" && (!open || d > a.radius + 90)) { boss.Despawn(); boss = null; }
+                else if (boss != null && boss.type == a.boss && boss.state == "dormant" && (!open || d > a.radius + 90)) { boss.Despawn(); boss = null; }   // only this arena's own boss (2 arenas since Z6)
             }
         }
 
         // ---------- flow ----------
         void PillarsStart(BossArena a)
         {
+            if (a.boss == "mireMother") { PillarsClear(); MireStart(a); return; }   // Z6 tide fight (SoulGame.Mire)
             PillarsClear(); bossFlow = "intro"; flowT = 0; roared = false; gimmick = "none"; pillarFails = pillarWins = 0; lastHeal = 0;
             SpawnPillars(a.pillars1, 1 / RISE);
             pillarOrder = new int[pillars.Count]; for (int i = 0; i < pillarOrder.Length; i++) pillarOrder[i] = i;   // intro lights in place order
@@ -61,12 +62,14 @@ namespace Soul
         {
             foreach (var p in pillars) KillPillar(p, false);
             pillars.Clear(); bossFlow = ""; gimmick = "none";
+            MireClear();
             if (boltOrb) boltOrb.SetActive(false);
         }
         public void PillarsTick(float dt) => PillarsUpdate(dt);   // MCP tests (same as ZoneTick, pillars only)
         void PillarsUpdate(float dt)
         {
             BoltOrb();
+            if (MireFightUpdate(dt)) return;   // Z6 늪의 어미 runs its own flow
             // boss framing (FollowCam): ease out so the 9.5 m beast and the player share the screen while fighting
             cam.fightTarget = bossFlow != "" && boss != null && boss.alive ? 1 : 0; cam.fightZoom = FIGHT_ZOOM;
             if (boss != null) cam.fightFocus = boss.pos;

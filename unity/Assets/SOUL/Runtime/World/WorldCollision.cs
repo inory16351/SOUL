@@ -29,6 +29,7 @@ namespace Soul
         static readonly Chunk persistent = new Chunk { cols = new List<Col>(), surfs = new List<Surf>() };
         public static void AddPersistent(List<Col> cols, List<Surf> surfs) { if (cols != null) persistent.cols.AddRange(cols); if (surfs != null) persistent.surfs.AddRange(surfs); }
         public static void RemovePersistent(List<Col> cols) { foreach (var c in cols) persistent.cols.Remove(c); }
+        public static void RemovePersistentSurfs(List<Surf> surfs) { foreach (var s in surfs) persistent.surfs.Remove(s); }
         /// neighbourhood i of key k: 0..8 = the 3x3 chunks, 9 = the persistent set
         static bool Near(Vector2Int k, int i, out Chunk ch)
         {

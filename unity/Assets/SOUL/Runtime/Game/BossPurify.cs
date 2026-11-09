@@ -87,7 +87,8 @@ namespace Soul
             // leftover grudge condenses in the cracked core, which breaks out as the red 뒤틀린 에너지 코어 part
             // (World/GrudgeParts, SoulGame.Grudge)
             var knee = core;
-            if (purifyT >= REWARD_AT && purifyT < GRUDGE_DROP - .4f) { int want = Mathf.Min(36, (int)((purifyT - REWARD_AT) / 1.2f * 36)); while (grudgeSpawned < want) { SpawnMote(center + new Vector3(Random.Range(-7f, 7f), Random.Range(.5f, 4f), Random.Range(-7f, 7f)), true); grudgeSpawned++; } }
+            if (purifyArena.zone == 6) grudgeDropped = true;   // organic boss: no grudge part (기획_결정사항, 2026-11-09)
+            if (purifyT >= REWARD_AT && purifyT < GRUDGE_DROP - .4f && !grudgeDropped) { int want = Mathf.Min(36, (int)((purifyT - REWARD_AT) / 1.2f * 36)); while (grudgeSpawned < want) { SpawnMote(center + new Vector3(Random.Range(-7f, 7f), Random.Range(.5f, 4f), Random.Range(-7f, 7f)), true); grudgeSpawned++; } }
             if (!grudgeDropped && purifyT >= GRUDGE_DROP)
             {
                 grudgeDropped = true;

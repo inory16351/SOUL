@@ -91,7 +91,7 @@ namespace Soul
                 }
             }
             critters.Update(dt, p, threatTmp);
-            ElitesUpdate(dt); FieldUpdate(dt);
+            ElitesUpdate(dt); FieldUpdate(dt); MireUpdate(dt);
             // the player can catch a critter by striking next to it
             if (anim.busy && (anim.name.StartsWith("light") || anim.name == "heavy" || anim.name == "flurry"))
                 foreach (var c in critters.list.ToArray()) if (Sim.FlatY(c.pos - p).magnitude < 1.4f) { enemies.Wisp(c.pos + Vector3.up * .2f, .4f); critters.Kill(c); }
@@ -178,9 +178,10 @@ namespace Soul
             if (!(e.territory is Territory t) || e.member < 0) return;
             t.dead[e.member] = true;
             if (e.def.eliteName == null) return;
+            MireKill(e);   // Z6: the dead shell becomes a platform, its core lies on the hidden ledge
             // elite reward: its part + 40 extra scrap (8 x 5)
             pickups.Burst(e.Center(), 8, 5);
-            var kind = e.type == "houndAlpha" ? "leap" : e.type == "executor" ? "skill:wave" : null;
+            var kind = e.type == "houndAlpha" ? "leap" : e.type == "executor" ? "skill:wave" : e.type == "giantDredger" ? "skill:suck" : null;
             if (kind != null) SpawnDrop(kind, e.pos + Sim.Forward(e.yaw) * 1.5f);
         }
         void SpawnDrop(string kind, Vector3 at)
@@ -208,6 +209,7 @@ namespace Soul
             SoulAudio.Play("shrine", d.pos);
             if (d.kind == "leap") { Parts.Give(Parts.Leap); Cue("도약 관절 · 점프 중에 한 번 더 점프", 3.5f); }
             else if (d.kind.StartsWith("skill:")) GrantSkill(d.kind.Substring(6));
+            else if (d.kind == "core:toxic") { Parts.Give(Parts.ToxicCore); Cue("독에 잠식된 코어 · 공격에 독이 묻는다 · 칼날이 보라색으로 물든다", 4); }
         }
 
         // ---- caches ----
