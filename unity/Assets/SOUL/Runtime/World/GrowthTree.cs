@@ -4,8 +4,9 @@ using UnityEngine;
 namespace Soul
 {
     // 성장 노드 트리 (기획_결정사항.md '성장 노드 트리', user decision 2026-11-08, 오리와 눈먼 숲 방식).
-    // Basic parts do two jobs: picking one up adds to xp (cumulative, never goes down) AND to the wallet
-    // (SoulGame.scrap, spent on skill-part upgrades, dropped on death). xp crosses thresholds → points → nodes.
+    // 2026-11-10: xp comes from KILLS (Growth.KillXp; never goes down, dying keeps it); basic parts are only the wallet
+    // (SoulGame.scrap: merchant, skill upgrades, kits; dropped on death). xp crosses thresholds → points → nodes.
+    // Nodes give simple stats and +1 slot of their branch's body part (GStat.Slot, Skills.BranchSlot).
     // Edit the Nodes table only: id, branch, name, effect, cost (points), position, required core part, prerequisites.
     // Position = the socket centre in Resources/UI/growth_tree_bg.png pixels (1672 x 941, origin top-left; socket list
     // in ui_atlas.md). A branch's first node has no prerequisite: it hangs off the body (Roots).
@@ -30,6 +31,7 @@ namespace Soul
         PodSense,       // reveals charge pods within N m
         ShrineSense,    // on-screen arrow to the nearest unresonated shrine within N m
         EnemyHp,        // HP numbers over enemies
+        Slot,           // +1 slot of the branch's body part (Skills.BranchSlot), 2026-11-10
     }
 
     public class GrowthNode
@@ -57,43 +59,43 @@ namespace Soul
             // ---- 코어: max HP, regen, damage taken (first node: 강화 프레임 I) ----
             new GrowthNode("c_frame1",  CORE, "강화 프레임 I",   "최대 체력 +10",                          GStat.MaxHp, 10, 1, P(1228, 377)),
             new GrowthNode("c_frame2",  CORE, "강화 프레임 II",  "최대 체력 +15",                          GStat.MaxHp, 15, 2, P(1357, 310), Parts.None, "c_frame1"),
-            new GrowthNode("c_frame3",  CORE, "강화 프레임 III", "최대 체력 +20",                          GStat.MaxHp, 20, 3, P(1519, 195), Parts.None, "c_frame2"),
+            new GrowthNode("c_slot2",   CORE, "몸통 슬롯 확장 II", "몸통 슬롯 +1",                          GStat.Slot, 1, 3, P(1519, 195), Parts.None, "c_frame2"),
             new GrowthNode("c_regen1",  CORE, "재생 회로",       "피격 1.5초 뒤부터 4초간 초당 최대 체력 1.5% 회복", GStat.Regen, .015f, 2, P(1325, 454), Parts.None, "c_frame1"),
-            new GrowthNode("c_regen2",  CORE, "재생 회로 II",    "피격 뒤 재생 초당 +1.5% (총 3%)",        GStat.Regen, .015f, 3, P(1449, 355), Parts.None, "c_regen1"),
+            new GrowthNode("c_slot1",   CORE, "몸통 슬롯 확장 I",  "몸통 슬롯 +1",                          GStat.Slot, 1, 2, P(1449, 355), Parts.None, "c_regen1"),
             new GrowthNode("c_plating", CORE, "충격 흡수판",     "받는 피해 −8%",                          GStat.Taken, .08f, 2, P(1352, 212), Parts.None, "c_frame1"),
             new GrowthNode("c_stable",  CORE, "출력 안정화",     "코어 과부하의 받는 피해 증가 절반 (+50% → +25%)", GStat.OverloadTaken, .5f, 2, P(1245, 128), Parts.None, "c_frame1"),
             new GrowthNode("c_filter",  CORE, "내오염 순환기",   "최대 체력 +25 (내오염 코어 필요)",       GStat.MaxHp, 25, 3, P(1415, 89), Parts.Toxic, "c_stable"),
             // ---- 오른팔(칼날): basic attack damage, finisher, reach ----
             new GrowthNode("r_edge1",   RIGHT, "날 연마 I",      "평타 피해 +8%",                          GStat.LightDmg, .08f, 1, P(416, 535)),
             new GrowthNode("r_edge2",   RIGHT, "날 연마 II",     "평타 피해 +10%",                         GStat.LightDmg, .10f, 2, P(348, 455), Parts.None, "r_edge1"),
-            new GrowthNode("r_finish",  RIGHT, "마무리 일격",    "3타 피해 +25%",                          GStat.FinisherDmg, .25f, 2, P(320, 310), Parts.None, "r_edge2"),
+            new GrowthNode("r_slot1",   RIGHT, "무기 슬롯 확장 I", "무기 슬롯 +1",                          GStat.Slot, 1, 2, P(320, 310), Parts.None, "r_edge2"),
             new GrowthNode("r_reach",   RIGHT, "긴 궤적",        "평타 판정 범위 +12%",                    GStat.Reach, .12f, 2, P(256, 500), Parts.None, "r_edge2"),
-            new GrowthNode("r_edge3",   RIGHT, "날 연마 III",    "평타 피해 +12%",                         GStat.LightDmg, .12f, 3, P(224, 356), Parts.None, "r_finish"),
-            new GrowthNode("r_skill",   RIGHT, "스킬 증폭",      "스킬 피해 +10%",                         GStat.SkillDmg, .10f, 3, P(147, 562), Parts.None, "r_reach"),
+            new GrowthNode("r_edge3",   RIGHT, "날 연마 III",    "평타 피해 +12%",                         GStat.LightDmg, .12f, 3, P(224, 356), Parts.None, "r_slot1"),
+            new GrowthNode("r_slot2",   RIGHT, "무기 슬롯 확장 II", "무기 슬롯 +1",                         GStat.Slot, 1, 3, P(147, 562), Parts.None, "r_reach"),
             new GrowthNode("r_cannon",  RIGHT, "캐논 연동",      "3타 피해 +25% (캐논 포 필요)",           GStat.FinisherDmg, .25f, 3, P(449, 379), Parts.Cannon, "r_edge3"),
             // ---- 왼팔(도구): counter window / damage / cooldown, rope reach ----
             new GrowthNode("l_guard1",  LEFT, "반격 감각 I",     "반격 판정 시간 +0.06초",                 GStat.CounterWindow, .06f, 1, P(1254, 538)),
             new GrowthNode("l_guard2",  LEFT, "반격 감각 II",    "반격 판정 시간 +0.06초",                 GStat.CounterWindow, .06f, 2, P(1403, 605), Parts.None, "l_guard1"),
-            new GrowthNode("l_riposte", LEFT, "되받아치기",      "반격 피해 +30%",                         GStat.CounterDmg, .30f, 2, P(1422, 499), Parts.None, "l_guard2"),
+            new GrowthNode("l_slot1",   LEFT, "팔 슬롯 확장 I",   "팔 슬롯 +1",                            GStat.Slot, 1, 2, P(1422, 499), Parts.None, "l_guard2"),
             new GrowthNode("l_quick",   LEFT, "빠른 복귀",       "반격 쿨다운 −20%",                       GStat.CounterCd, .20f, 2, P(1244, 691), Parts.None, "l_guard2"),
-            new GrowthNode("l_guard3",  LEFT, "반격 감각 III",   "반격 판정 시간 +0.06초",                 GStat.CounterWindow, .06f, 3, P(1536, 563), Parts.None, "l_riposte"),
+            new GrowthNode("l_slot2",   LEFT, "팔 슬롯 확장 II",  "팔 슬롯 +1",                            GStat.Slot, 1, 3, P(1536, 563), Parts.None, "l_slot1"),
             new GrowthNode("l_rope1",   LEFT, "로프 와인더",     "로프 사거리 +15% (로프 팔 필요)",        GStat.RopeRange, .15f, 2, P(1409, 719), Parts.Rope, "l_quick"),
             new GrowthNode("l_rope2",   LEFT, "로프 와인더 II",  "로프 사거리 +15% (로프 팔 필요)",        GStat.RopeRange, .15f, 3, P(1346, 827), Parts.Rope, "l_rope1"),
             // ---- 다리: move speed, dash cooldown ----
             new GrowthNode("g_run1",    LEGS, "구동 모터 I",     "이동 속도 +5%",                          GStat.Speed, .05f, 1, P(769, 861)),
             new GrowthNode("g_dash1",   LEGS, "급가속 I",        "대쉬 쿨다운 −10%",                       GStat.DashCd, .10f, 2, P(649, 839), Parts.None, "g_run1"),
             new GrowthNode("g_run2",    LEGS, "구동 모터 II",    "이동 속도 +5%",                          GStat.Speed, .05f, 2, P(517, 826), Parts.None, "g_dash1"),
-            new GrowthNode("g_dash2",   LEGS, "급가속 II",       "대쉬 쿨다운 −10%",                       GStat.DashCd, .10f, 2, P(897, 842), Parts.None, "g_run1"),
+            new GrowthNode("g_slot1",   LEGS, "다리 슬롯 확장 I", "다리 슬롯 +1",                          GStat.Slot, 1, 2, P(897, 842), Parts.None, "g_run1"),
             new GrowthNode("g_magnet",  LEGS, "자석 접지",       "이동 속도 +6% (자석 다리 필요)",         GStat.Speed, .06f, 3, P(425, 692), Parts.Magnet, "g_run2"),
-            new GrowthNode("g_jet",     LEGS, "제트 보조",       "대쉬 쿨다운 −15% (제트엔진 필요)",       GStat.DashCd, .15f, 3, P(1131, 823), Parts.Jet, "g_dash2"),
-            new GrowthNode("g_run3",    LEGS, "구동 모터 III",   "이동 속도 +6%",                          GStat.Speed, .06f, 3, P(318, 826), Parts.None, "g_run2"),
+            new GrowthNode("g_jet",     LEGS, "제트 보조",       "대쉬 쿨다운 −15% (제트엔진 필요)",       GStat.DashCd, .15f, 3, P(1131, 823), Parts.Jet, "g_slot1"),
+            new GrowthNode("g_slot2",   LEGS, "다리 슬롯 확장 II", "다리 슬롯 +1",                         GStat.Slot, 1, 3, P(318, 826), Parts.None, "g_run2"),
             // ---- 머리: map fog, pods, shrines, enemy info ----
             new GrowthNode("h_scan1",   HEAD, "광역 스캐너 I",   "지도 공개 반경 +20%",                    GStat.FogRadius, .20f, 1, P(835, 47)),
             new GrowthNode("h_scan2",   HEAD, "광역 스캐너 II",  "지도 공개 반경 +25%",                    GStat.FogRadius, .25f, 2, P(736, 78), Parts.None, "h_scan1"),
             new GrowthNode("h_pod",     HEAD, "포드 신호 감지",  "40m 안의 충전 포드를 자동으로 발견",     GStat.PodSense, 40, 2, P(474, 129), Parts.None, "h_scan2"),
-            new GrowthNode("h_lens",    HEAD, "분석 렌즈",       "적 머리 위에 남은 체력 수치 표시",       GStat.EnemyHp, 1, 2, P(940, 80), Parts.None, "h_scan1"),
+            new GrowthNode("h_slot1",   HEAD, "머리 슬롯 확장 I", "머리 슬롯 +1",                          GStat.Slot, 1, 2, P(940, 80), Parts.None, "h_scan1"),
             new GrowthNode("h_scan3",   HEAD, "광역 스캐너 III", "지도 공개 반경 +30%",                    GStat.FogRadius, .30f, 3, P(366, 214), Parts.None, "h_pod"),
-            new GrowthNode("h_weak",    HEAD, "약점 분석",       "모든 피해 +6%",                          GStat.AllDmg, .06f, 3, P(325, 91), Parts.None, "h_pod"),
+            new GrowthNode("h_slot2",   HEAD, "머리 슬롯 확장 II", "머리 슬롯 +1",                         GStat.Slot, 1, 3, P(325, 91), Parts.None, "h_pod"),
             new GrowthNode("h_shrine",  HEAD, "공명 감지",       "120m 안의 공명하지 않은 기둥 방향 표시", GStat.ShrineSense, 120, 3, P(204, 187), Parts.None, "h_scan3"),
         };
 
@@ -103,7 +105,7 @@ namespace Soul
         public static readonly HashSet<string> open = new HashSet<string>();
         public static int spent;
         public static void Reset() { xp = 0; spent = 0; open.Clear(); }
-        /// a basic part (or a reward) came in: xp here, the wallet (SoulGame.scrap) at the call site
+        /// a kill (or a reward) gave xp
         public static void Gain(int n) { if (n > 0) xp += n; }
 
         // ---------- points ----------
@@ -163,5 +165,9 @@ namespace Soul
         public static float PodSense => Sum(GStat.PodSense);
         public static float ShrineSense => Sum(GStat.ShrineSense);
         public static bool EnemyHp => Sum(GStat.EnemyHp) > 0;
+        /// open slot nodes of the branch that extends this body part
+        public static int SlotBonus(Slot s) { int n = 0; foreach (var g in Nodes) if (g.stat == GStat.Slot && open.Contains(g.id) && Skills.BranchSlot[g.branch] == s) n++; return n; }
+        /// xp for a kill: field ~ HP / 12 (min 2), elites 150, bosses 400 (draft, 2026-11-10)
+        public static int KillXp(EnemyType d) => d.bossName != null ? 400 : d.eliteName != null ? 150 : Mathf.Max(2, Mathf.RoundToInt(d.hp / 12f));
     }
 }

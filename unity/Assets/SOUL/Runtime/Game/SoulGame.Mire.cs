@@ -13,7 +13,7 @@ namespace Soul
     //            reaches the hidden ledge east of the pool, where its 독에 잠식된 코어 lies.
     //  거대 준설기 (giantDredger, elite) / 녹슨 준설기: the intake (suck) pulls you in. Swarm bugs caught in the suck jam
     //            it: stunned 5 s (2x). Drops the skill 흡입.
-    //  독에 잠식된 코어 (Parts.ToxicCore): every hit poisons for 3 s; the blade turns violet (LaserBlade.toxic).
+    //  독에 잠식된 코어 (body-slot passive skill "toxic"): every hit poisons for 3 s; the blade turns violet (LaserBlade.toxic).
     //  늪의 어미 (mireMother, boss): tide fight. Low tide: three tentacles rise (cut them); the mother is under the sludge.
     //            High tide: the square floods (sludge hurts), drowned roofs and floating egg shells are the dry ground;
     //            the mother surfaces, exposed, throwing sludge and breathing poison. All tentacles cut: the tide comes early.
@@ -44,16 +44,16 @@ namespace Soul
             tideMat = Mats.Unlit(new Color(.16f, .28f, .08f, .78f), Blend.Alpha, false, UnityEngine.Rendering.CullMode.Off, false);
             shellMat = Mats.Lit(Color.white, Color.black, .05f, .15f, true);
             if (mireDisc == null) { var b = new MeshBuilder(611); b.Disc(Vector3.zero, 0, 1, 28, Color.white); mireDisc = b.Build("mire disc"); }
-            if (mireBall == null) { var b = new MeshBuilder(612); b.Rock(Vector3.zero, .5f, Color.white, .3f, 1, 1); mireBall = b.Build("sludge ball"); }
+            if (mireBall == null) mireBall = MireModels.SludgeBall();
             var prevImpact = enemies.onImpact;
             enemies.onImpact = (e, a, p) => { prevImpact?.Invoke(e, a, p); MireImpact(e, a, p); };
-            enemies.onAggro += e => { if (Parts.Has(Parts.ToxicCore) && e.alive) e.poisonUntil = realTime + 3; };   // 독에 잠식된 코어
+            enemies.onAggro += e => { if (Skills.IsOn("toxic") && e.alive) e.poisonUntil = realTime + 3; };   // 독에 잠식된 코어
         }
 
         void MireUpdate(float dt)
         {
             if (!mireInit) MireInit();
-            LaserBlade.toxic = Parts.Has(Parts.ToxicCore);
+            LaserBlade.toxic = Skills.IsOn("toxic");
             var p = ch.root.position;
             // poison ticks (독에 잠식된 코어): 7 / s, a green wisp now and then
             foreach (var e in enemies.list)
@@ -270,14 +270,22 @@ namespace Soul
         static Vector3 LedgeTop() { var c = MirePools.Ledge; return new Vector3(c.x, Terrain.Height(c.x, c.y), c.y); }
 
         // ---------- the dead shell: a platform in the pool ----------
-        const float SHELL_TOP = 2.2f, SHELL_HALF = 3.6f;   // top 2.2 m over the pool floor: bank -> shell and shell -> ledge both within the 2.36 m double jump
+        // top 2.2 m over the pool floor: bank -> shell and shell -> ledge both within the 2.36 m double jump.
+        // The crown is round (MireModels.DeadShell, flat to r 3.05): four boxes at 0/45/90/135° cover it as a
+        // 16-gon (edge 2.8 m on the axes, 3.03 m between); the corpse is the living host's size (dome r ~3.1).
+        const float SHELL_TOP = 2.2f, SHELL_LONG = 2.8f, SHELL_WIDE = 1.2f, SHELL_WALL = 3.6f;
         void ShellPlatform()
         {
             if (shellBuilt) return;
             shellBuilt = true;
             var c = MirePools.Host; float floor = Terrain.Height(c.x, c.y), top = floor + SHELL_TOP;
-            var surfs = new List<WorldCollision.Surf> { new WorldCollision.Surf { kind = PropSurface.BOX, c = c, half = new Vector2(SHELL_HALF, SHELL_HALF), cos = 1, sin = 0, top = top } };
-            var cols = new List<WorldCollision.Col> { new WorldCollision.Col { box = true, c = c, half = new Vector2(SHELL_HALF + .3f, SHELL_HALF + .3f), cos = 1, sin = 0, ranged = true, y0 = floor - 3, y1 = top - .15f } };
+            var surfs = new List<WorldCollision.Surf>();
+            for (int k = 0; k < 4; k++)
+            {
+                float a = k * Mathf.PI * .25f;
+                surfs.Add(new WorldCollision.Surf { kind = PropSurface.BOX, c = c, half = new Vector2(SHELL_LONG, SHELL_WIDE), cos = Mathf.Cos(a), sin = Mathf.Sin(a), top = top });
+            }
+            var cols = new List<WorldCollision.Col> { new WorldCollision.Col { box = false, c = c, r = SHELL_WALL, ranged = true, y0 = floor - 3, y1 = top - .15f } };
             WorldCollision.AddPersistent(cols, surfs);
             vfx.Dust(new Vector3(c.x, top, c.y), 2); cam.Shake(.08f);
         }
@@ -287,14 +295,7 @@ namespace Soul
             bool near = Sim.FlatY(new Vector3(MirePools.Host.x, 0, MirePools.Host.y) - p).magnitude < 140;
             if (near && shellGo == null)
             {
-                if (shellMesh == null)
-                {
-                    var b = new MeshBuilder(613);
-                    b.Rock(new Vector3(0, SHELL_TOP * .55f, 0), SHELL_HALF * 1.35f, new Color(.36f, .33f, .27f), .18f, .5f, 2);
-                    for (int k = 0; k < 7; k++) { float a = k * .9f; b.Rock(new Vector3(Mathf.Sin(a) * 2.6f, SHELL_TOP * .9f, Mathf.Cos(a) * 2.6f), .9f, new Color(.3f, .28f, .23f), .3f, .4f, 1); }
-                    b.Rock(new Vector3(0, SHELL_TOP - .25f, 0), 2.6f, new Color(.42f, .38f, .3f), .1f, .25f, 1);
-                    shellMesh = b.Build("dead shell");
-                }
+                if (shellMesh == null) shellMesh = MireModels.DeadShell();
                 var c = MirePools.Host;
                 shellGo = new GameObject("dead shell host"); shellGo.transform.SetParent(scene.actors, false);
                 shellGo.transform.localPosition = Sim.ToUnity(new Vector3(c.x, Terrain.Height(c.x, c.y), c.y));
@@ -371,14 +372,7 @@ namespace Soul
             if (roofsBuilt) return;
             roofsBuilt = true;
             float floor = ArenaFloor(a);
-            if (roofMesh == null)
-            {
-                var b = new MeshBuilder(614);
-                b.Box(new Vector3(0, ROOF_TOP * .5f - .3f, 0), new Vector3(6.4f, ROOF_TOP + .6f, 4.8f), new Color(.32f, .3f, .27f));
-                b.Box(new Vector3(0, ROOF_TOP + .05f, 0), new Vector3(6.8f, .14f, 5.2f), new Color(.4f, .3f, .24f));
-                b.Box(new Vector3(-1.6f, ROOF_TOP + .3f, 0), new Vector3(.5f, .5f, .5f), new Color(.25f, .24f, .22f));
-                roofMesh = b.Build("drowned roof");
-            }
+            if (roofMesh == null) roofMesh = MireModels.Roof();
             roofsGo = new GameObject("mire roofs"); roofsGo.transform.SetParent(scene.actors, false);
             var cols = new List<WorldCollision.Col>(); var surfs = new List<WorldCollision.Surf>();
             for (int k = 0; k < 4; k++)
@@ -396,7 +390,7 @@ namespace Soul
         void SpawnEggs(BossArena a)
         {
             ClearEggs();
-            if (eggMesh == null) { var b = new MeshBuilder(615); b.Rock(new Vector3(0, EGG_TOP * .5f, 0), 1.7f, new Color(.62f, .6f, .48f), .15f, .45f, 1); eggMesh = b.Build("egg shell"); }
+            if (eggMesh == null) eggMesh = MireModels.EggShell();
             float floor = ArenaFloor(a);
             for (int k = 0; k < 5; k++)
             {
@@ -494,17 +488,388 @@ namespace Soul
         /// MCP tests
         public string MireTest(string what)
         {
-            if (what == "state") return MireState + $" | hosts {hosts.Count} dredges {dredges.Count} puddles {puddles.Count} globs {globs.Count} shell {shellBuilt} core {Parts.Has(Parts.ToxicCore)}";
+            if (what == "state") return MireState + $" | hosts {hosts.Count} dredges {dredges.Count} puddles {puddles.Count} globs {globs.Count} shell {shellBuilt} core {Skills.IsOn("toxic")}";
             if (what == "host")
             {
                 if (hosts.Count == 0) return "no host";
                 var h = hosts[0]; return $"host hp {h.e.hp:F0} phase {h.phase} sac {h.sac} sets {h.sets} burst {h.burst[0]},{h.burst[1]},{h.burst[2]} stun {Mathf.Max(0, h.stunUntil - realTime):F1} engaged {h.e.Engaged}";
             }
-            if (what == "core") { Parts.Give(Parts.ToxicCore); return "core given"; }
+            if (what == "core") { GrantSkill("toxic"); return "core given (equipped " + Skills.IsOn("toxic") + ")"; }
             if (what == "suck") { GrantSkill("suck"); return "suck granted"; }
             return "?";
         }
         public void MireTick(float dt) => MireUpdate(dt);
         public bool MireFightTick(float dt) => MireFightUpdate(dt);
+    }
+
+    // Mesh-only models. The three bearing planes cover the existing BOX surfaces exactly;
+    // all relief is below them, inside the corresponding wall footprints. Sim space throughout.
+    static class MireModels
+    {
+        static Vector3 V(float x, float y, float z) => new Vector3(x, y, z);
+        static Color C(int hex) => MeshBuilder.Hex(hex);
+
+        // CCW perimeter seen from above, with exact corners (unlike a circular fan).
+        static Vector3 SquarePoint(int i, int perSide, float halfX, float halfZ, float y)
+        {
+            int side = i / perSide % 4;
+            float t = (i % perSide) / (float)perSide * 2 - 1;
+            if (side == 0) return V(-halfX, y, t * halfZ);
+            if (side == 1) return V(t * halfX, y, halfZ);
+            if (side == 2) return V(halfX, y, -t * halfZ);
+            return V(-t * halfX, y, -halfZ);
+        }
+
+        // Shell-host helpers. All coordinates are sim-space; only Build mirrors.
+        static Vector3 Pol(float r, float deg, float y)
+        {
+            float a = deg * Mathf.Deg2Rad;
+            return V(Mathf.Sin(a) * r, y, Mathf.Cos(a) * r);
+        }
+        static void TwoSided(MeshBuilder b, Vector3 a, Vector3 c, Vector3 d, Color col)
+        {
+            b.Tri(a, c, d, col); b.Tri(a, d, c, col);
+        }
+        // Closed olive-bevelled chitin scute. Low relief on the crown, sloping
+        // layered folds on the skirt. Correct the perimeter before emitting.
+        static void Scute(MeshBuilder b, Vector3[] outer, int hex, float rise = .025f)
+        {
+            Vector3 center = Vector3.zero;
+            float winding = 0;
+            for (int i = 0; i < outer.Length; i++)
+            {
+                center += outer[i];
+                winding += Vector3.Cross(outer[i], outer[(i + 1) % outer.Length]).y;
+            }
+            center /= outer.Length;
+            if (winding < 0)
+                for (int i = 0; i < outer.Length / 2; i++)
+                {
+                    Vector3 swap = outer[i]; outer[i] = outer[outer.Length - 1 - i];
+                    outer[outer.Length - 1 - i] = swap;
+                }
+            var inset = new Vector3[outer.Length];
+            for (int i = 0; i < outer.Length; i++)
+                inset[i] = Vector3.Lerp(outer[i], center, .12f) + V(0, rise * .5f, 0);
+            Vector3 ridge = center + V(0, rise, 0), bottom = center - V(0, .045f, 0);
+            Color plate = b.Jitter(hex, .08f);
+            for (int i = 0; i < outer.Length; i++)
+            {
+                int n = (i + 1) % outer.Length;
+                b.Tri(ridge, inset[i], inset[n], b.Jitter(plate, .035f));
+                b.Quad(outer[i], outer[n], inset[n], inset[i], b.Jitter(0x797d50, .08f));
+                Vector3 lo = outer[i] - V(0, .045f, 0), ln = outer[n] - V(0, .045f, 0);
+                b.Quad(lo, ln, outer[n], outer[i], C(0x33222f));
+                b.Tri(bottom, ln, lo, C(0x30232b));
+            }
+        }
+        static void ShellLobe(MeshBuilder b, Vector3 center, Vector3 size, int hex, int detail = 0)
+        {
+            b.Push(); b.Translate(center); b.Scale(size.x, size.y, size.z);
+            b.Rock(Vector3.zero, 1, b.Jitter(hex, .08f), 0, 1, detail); b.Pop();
+        }
+        static void ShellHook(MeshBuilder b, Vector3 a, Vector3 bend, Vector3 tip, float radius, int hex)
+        {
+            b.Beam(a, bend, radius, radius * .57f, 4, b.Jitter(hex, .06f));
+            b.Beam(bend, tip, radius * .57f, .008f, 4, C(hex));
+        }
+        static void Rivets(MeshBuilder b, Vector3 from, Vector3 to, int n, float h)
+        {
+            for (int k = 0; k < n; k++)
+                b.Cylinder(Vector3.Lerp(from, to, n == 1 ? .5f : k / (float)(n - 1)),
+                    .035f, .027f, h, 5, C(0x81765e));
+        }
+
+        public static Mesh DeadShell()
+        {
+            var b = new MeshBuilder(613);
+            const float top = 2.2f, crown = 3.06f;
+            const int chitin = 0x49323f, plate = 0x624650, flesh = 0x785064;
+            const int horn = 0x99946c, dark = 0x30212b, slime = 0x455239;
+            // Continuous bearing skin: r=3.06 (inradius >3.05) covers the four
+            // fixed half(2.8,1.2) boxes. Relief on r<3 remains below y=2.32.
+            b.Disc(V(0, top - .01f, 0), 0, crown, 48, C(0x49323f));
+            float Outer(float z) => Mathf.Sqrt(Mathf.Max(0, crown * crown - z * z));
+            float Inner(float z) => Mathf.Sqrt(Mathf.Max(.22f * .22f, 1.64f * 1.64f - z * z));
+            // Same five paired costal scutes as the living host, collapsed flat.
+            for (int row = 0; row < 5; row++)
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    float z = -2.02f + row * 1.01f, z0 = z - .47f, z1 = z + .56f;
+                    Scute(b, new[] {
+                        V(side * Inner(z0), top, z0), V(side * Outer(z0) * .94f, top, z0),
+                        V(side * Outer(z + .07f), top, z + .07f),
+                        V(side * Outer(z1) * .94f, top, z1), V(side * Inner(z1), top, z1),
+                        V(side * Inner(z + .07f), top, z + .07f)
+                    }, row % 2 == 0 ? chitin : plate);
+                }
+            // Keel spines have folded sideways: low, broad horn scars, never
+            // upright spikes in the walking area. Crown maximum here = 2.28.
+            for (int row = 0; row < 5; row++)
+            {
+                float z = -2.35f + row * 1.14f;
+                Scute(b, new[] { V(-.24f, top, z - .25f), V(.24f, top, z - .25f),
+                    V(.33f, top, z + .18f), V(.02f, top, z + .34f),
+                    V(-.30f, top, z + .18f) }, chitin, .055f);
+                b.Beam(V(-.13f, 2.265f, z), V(.25f, 2.235f, z - .16f),
+                    .015f, .008f, 4, C(horn));
+            }
+            // Underlying dome slopes down to the sludge. A left flank window
+            // is genuinely open: exposed ribs replace the missing outer skin.
+            const int count = 48;
+            float[] radii = { crown, 3.38f, 3.58f, 3.73f, 3.52f };
+            float[] heights = { top - .01f, 1.92f, 1.18f, .72f, -.24f };
+            bool Socket(int i) => i <= 1 || i >= 46 || (i >= 7 && i <= 9)
+                || (i >= 14 && i <= 16) || (i >= 31 && i <= 33) || (i >= 38 && i <= 40);
+            for (int row = 0; row < radii.Length - 1; row++)
+                for (int i = 0; i < count; i++)
+                {
+                    if (row >= 1 && (Socket(i) || (i >= 32 && i <= 36))) continue;
+                    float a = i * 360f / count, next = (i + 1) * 360f / count;
+                    int color = row == 0 ? chitin : row == 1 ? dark : row == 2 ? slime : 0x292e25;
+                    float lowerR = row == 0 && Socket(i) ? 3.13f : radii[row + 1];
+                    b.Quad(Pol(lowerR, a, heights[row + 1]),
+                        Pol(lowerR, next, heights[row + 1]),
+                        Pol(radii[row], next, heights[row]), Pol(radii[row], a, heights[row]),
+                        b.Jitter(color, .09f));
+                }
+            // Twenty-four serrated skirt shingles echo the live shell's rim.
+            // The flared tooth tips are at the waterline, within r=3.86.
+            for (int i = 0; i < 24; i++)
+            {
+                float a = i * 15f;
+                if (i == 0 || i == 23 || i == 3 || i == 4 || i == 7 || i == 8
+                    || (i >= 15 && i <= 18) || i == 19 || i == 20) continue;
+                Scute(b, new[] { Pol(2.79f, a - 7, top - .005f),
+                    Pol(3.35f, a - 7, 1.92f), Pol(3.86f, a + 1.5f, .76f),
+                    Pol(3.33f, a + 7, 1.88f), Pol(2.79f, a + 7, top - .005f) },
+                    i % 3 == 0 ? plate : chitin, .025f);
+                if (i % 2 == 0)
+                    ShellHook(b, Pol(3.33f, a, 1.63f), Pol(3.57f, a - 1, 1.89f),
+                        Pol(3.78f, a - 4, 1.66f), .095f, horn);
+                // Low olive knob at a plate edge; never protrudes onto crown.
+                if (i % 2 == 0) ShellLobe(b, Pol(3.23f, a + 4, 1.98f), V(.08f, .05f, .08f), 0x7e8155);
+            }
+            // Torn flank at -X: dark recessed flesh and five bowed pale ribs.
+            ShellLobe(b, V(-3.12f, 1.16f, -.55f), V(.28f, .63f, .99f), dark);
+            for (int i = 0; i < 5; i++)
+            {
+                float z = -1.33f + i * .36f;
+                Vector3 a = V(-2.98f, 1.84f, z), bend = V(-3.42f, 1.39f, z + .06f),
+                    end = V(-3.40f, .83f, z + .15f);
+                b.Beam(a, bend, .085f, .07f, 5, C(0xb0a88b));
+                b.Beam(bend, end, .07f, .035f, 5, C(0x8b826a));
+                ShellHook(b, a + V(.035f, -.04f, .10f), bend + V(.025f, -.08f, .12f),
+                    end + V(.03f, -.20f, .10f), .042f, flesh);
+            }
+            // Exactly two small machine fragments, mostly swallowed by tissue.
+            for (int side = -1; side <= 1; side += 2)
+            {
+                b.Push(); b.Translate(side * 2.91f, 1.94f, side * .77f);
+                b.RotateZ(-side * .63f); b.RotateY(side * .25f);
+                b.Box(V(0, 0, 0), V(.46f, .055f, .64f), C(0x624b3c));
+                Rivets(b, V(-.15f, .035f, -.23f), V(-.15f, .035f, .23f), 3, .025f);
+                ShellLobe(b, V(.15f, .015f, .04f), V(.16f, .08f, .35f), flesh);
+                b.Pop();
+            }
+            // Three burst sacs at the living host's angles: ragged hollow cups,
+            // folded petals and veins. No glow, all tissue <= .12 above top.
+            for (int sac = 0; sac < 3; sac++)
+            {
+                float angle = sac * 120f + .4f * Mathf.Rad2Deg;
+                Vector3 center = Pol(1.5456f, angle, top + .012f);
+                b.Disc(center, 0, .33f, 10, C(0x392435));
+                for (int i = 0; i < 8; i++)
+                {
+                    float a = i * 45f;
+                    Vector3 p = center + Pol(.33f, a - 17, .025f),
+                        q = center + Pol(.33f, a + 17, .025f),
+                        tip = center + Pol(b.Range(.43f, .58f), a + 4, b.Range(.035f, .085f)),
+                        fold = center + Pol(.43f, a, .095f);
+                    TwoSided(b, p, q, fold, b.Jitter(flesh, .12f));
+                    TwoSided(b, q, tip, fold, C(0x946277));
+                    TwoSided(b, tip, p, fold, C(0x59374e));
+                    Vector3 vein = center + Pol(.18f, a, .02f),
+                        end = center + Pol(.68f, a + 7, .025f);
+                    TwoSided(b, vein + Pol(.018f, a - 90, 0),
+                        vein + Pol(.018f, a + 90, 0), end, C(0x815366));
+                }
+            }
+            // Slumped neck exits +Z. It is thick and wrinkled, not an empty
+            // socket; the skull is rolled to one side and the beak hangs open.
+            ShellLobe(b, V(0, .94f, 2.95f), V(.57f, .35f, .63f), flesh, 1);
+            for (int i = 0; i < 4; i++)
+            {
+                float z = 2.64f + i * .17f;
+                b.Beam(V(-.43f, 1.02f, z), V(-.24f, 1.25f - i * .045f, z + .03f),
+                    .05f, .04f, 5, C(0x57394c));
+                b.Beam(V(-.24f, 1.25f - i * .045f, z + .03f), V(.36f, 1.10f - i * .045f, z + .04f),
+                    .04f, .05f, 5, C(0x94647b));
+            }
+            b.Push(); b.Translate(-.13f, .98f, 3.37f); b.RotateZ(-.26f);
+            ShellLobe(b, V(0, 0, 0), V(.48f, .27f, .36f), chitin, 1);
+            ShellLobe(b, V(0, .17f, -.06f), V(.42f, .12f, .30f), plate);
+            // Upper hooked beak, lower jaw gaping down into the sludge.
+            ShellHook(b, V(0, .13f, .20f), V(0, -.01f, .43f), V(0, -.25f, .46f), .17f, horn);
+            ShellLobe(b, V(.06f, -.25f, .17f), V(.35f, .11f, .30f), flesh);
+            ShellHook(b, V(.06f, -.30f, .17f), V(.07f, -.30f, .45f), V(.07f, -.18f, .48f), .12f, horn);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                ShellLobe(b, V(side * .39f, .08f, .09f), V(.12f, .095f, .13f), 0x6f7350);
+                ShellLobe(b, V(side * .43f, .08f, .15f), V(.055f, .042f, .055f), 0x47404d);
+                ShellHook(b, V(side * .34f, -.07f, .10f), V(side * .62f, -.15f, .20f),
+                    V(side * .50f, -.29f, .45f), .12f, horn);
+            }
+            b.Pop();
+            // Four recognisable sprawling limbs; knees bend outward rather
+            // than standing vertically. Distal paws and curled claws sink.
+            for (int side = -1; side <= 1; side += 2)
+                for (int index = 0; index < 2; index++)
+                {
+                    float dir = index == 0 ? 1 : -1;
+                    Vector3 hip = V(side * 2.35f, 1.02f, dir * 1.30f),
+                        knee = V(side * 3.10f, .95f, dir * 1.54f),
+                        ankle = V(side * 3.26f, .76f, dir * 1.53f);
+                    b.Beam(hip, knee, .30f, .21f, 7, C(chitin));
+                    ShellLobe(b, Vector3.Lerp(hip, knee, .50f) + V(0, .10f, 0),
+                        V(.46f, .16f, .28f), plate);
+                    ShellLobe(b, knee, V(.23f, .19f, .23f), flesh);
+                    b.Beam(knee, ankle, .20f, .15f, 6, C(chitin));
+                    ShellLobe(b, ankle + V(0, .015f, 0), V(.24f, .18f, .29f), flesh);
+                    ShellLobe(b, ankle + V(0, .13f, 0), V(.23f, .07f, .25f), chitin);
+                    for (int claw = -1; claw <= 1; claw++)
+                    {
+                        Vector3 a = ankle + V(claw * .13f, .08f, dir * .19f);
+                        Vector3 bend = a + V(side * .035f, .04f, dir * .06f);
+                        ShellHook(b, a, bend, bend + V(-side * .03f, -.23f, -dir * .04f),
+                            .065f, horn);
+                    }
+                }
+            // Short segmented tail lies in the sludge at the rear.
+            b.Beam(V(0, .65f, -3.20f), V(.18f, .49f, -3.63f), .25f, .10f, 6, C(chitin));
+            ShellHook(b, V(.18f, .50f, -3.58f), V(.27f, .57f, -3.77f),
+                V(.31f, .40f, -3.85f), .09f, horn);
+            // Algae clings to the waterline; drips taper downward into the pool.
+            for (int i = 0; i < 32; i++)
+            {
+                float a = i * 11.25f;
+                if (i >= 21 && i <= 24) continue;
+                Vector3 p = Pol(3.70f, a - 1.6f, .83f),
+                    q = Pol(3.70f, a + 1.6f, .86f),
+                    tip = Pol(3.72f, a + .5f, b.Range(.28f, .65f));
+                TwoSided(b, p, q, tip, b.Jitter(i % 3 == 0 ? 0x617244 : slime, .12f));
+                if (i % 3 == 0)
+                    b.Beam(Pol(3.58f, a, 1.18f), Pol(3.76f, a + 1, .69f),
+                        .035f, .012f, 4, C(slime));
+            }
+            return b.Build("dead shell");
+        }
+
+        public static Mesh Roof()
+        {
+            var b = new MeshBuilder(614);
+            // Collapsed hipped roof: its tile deck is flat at ROOF_TOP, not above it.
+            for (int i = 0; i < 16; i++)
+            {
+                int n = (i + 1) % 16;
+                Vector3 a = SquarePoint(i, 4, 2.98f, 2.18f, 0), c = SquarePoint(n, 4, 2.98f, 2.18f, 0);
+                Vector3 d = SquarePoint(i, 4, 3.2f, 2.4f, .69f), e = SquarePoint(n, 4, 3.2f, 2.4f, .69f);
+                Vector3 f = d + V(0, .10f + (i % 3) * .012f, 0), g = e + V(0, .10f + (n % 3) * .012f, 0);
+                Vector3 h = V(d.x, 1, d.z), j = V(e.x, 1, e.z);
+                b.Quad(a, c, e, d, b.Jitter(i % 3 == 0 ? 0x363a31 : 0x565346));
+                b.Quad(d, e, g, f, b.Jitter(0x4d613b, .16f)); // integrated algae / tide band
+                b.Quad(f, g, j, h, b.Jitter(i % 4 == 0 ? 0x3b3430 : 0x6d5141));
+            }
+            for (int row = 0; row < 4; row++)
+                for (int col = 0; col < 6; col++)
+                {
+                    Vector3 center = V(-3.2f + (col + .5f) * (6.4f / 6), 1, -1.8f + row * 1.2f);
+                    if (row == 3 && col == 1)
+                    {
+                        // A chimney broken down to its roof-level stump; the flue is plugged
+                        // with soot and rubble so there is no unmodelled hole in the BOX floor.
+                        for (int k = 0; k < 8; k++)
+                        {
+                            int n = (k + 1) % 8;
+                            Vector3 a = center + SquarePoint(k, 2, 6.4f / 12, .6f, 0);
+                            Vector3 c = center + SquarePoint(n, 2, 6.4f / 12, .6f, 0);
+                            Vector3 d = center + SquarePoint(k, 2, .27f, .32f, 0);
+                            Vector3 e = center + SquarePoint(n, 2, .27f, .32f, 0);
+                            b.Quad(a, c, e, d, b.Jitter(k % 2 == 0 ? 0x7c6a55 : 0x605749));
+                            b.Tri(center, d, e, b.Jitter(k % 3 == 0 ? 0x615e4e : 0x2f322b));
+                        }
+                        continue;
+                    }
+                    float x = 6.4f / 12, z = .6f, chip = b.Range(.12f, .27f);
+                    Vector3[] edge = { V(-x, 0, -z), V(-x, 0, z), V(x - chip, 0, z), V(x, 0, z), V(x, 0, -z) };
+                    Vector3[] tile = { V(-x + .025f, 0, -z + .025f), V(-x + .025f, 0, z - .025f),
+                        V(x - chip, 0, z - .025f), V(x - .025f, 0, z - chip), V(x - .025f, 0, -z + .025f) };
+                    int hex = (row + col) % 4 == 0 ? 0x777063 : (row % 2 == 0 ? 0x785f4c : 0x685544);
+                    Color tileColor = b.Jitter(hex, .10f);
+                    for (int k = 0; k < 5; k++)
+                    {
+                        int n = (k + 1) % 5;
+                        b.Quad(center + edge[k], center + edge[n], center + tile[n], center + tile[k], C(0x3c3b31));
+                        b.Tri(center, center + tile[k], center + tile[n], tileColor);
+                    }
+                }
+            // Broken fascia, exposed nail heads and trapped fragments below the walking deck.
+            for (int side = -1; side <= 1; side += 2)
+                for (int k = 0; k < 2; k++)
+                {
+                    b.Box(V(-1.8f + k * 3.6f, .86f, side * 2.37f), V(.64f, .09f, .04f), b.Jitter(0x403a31));
+                    b.Beam(V(-1.9f + k * 3.6f, .85f, side * 2.37f), V(-1.86f + k * 3.6f, .94f, side * 2.38f), .014f, .009f, 3, C(0x796047));
+                }
+            b.Quad(V(-2.98f, 0, -2.18f), V(2.98f, 0, -2.18f), V(2.98f, 0, 2.18f), V(-2.98f, 0, 2.18f), C(0x30342b));
+            return b.Build("drowned roof");
+        }
+
+        public static Mesh EggShell()
+        {
+            var b = new MeshBuilder(615);
+            const int count = 24;
+            var baseRing = new Vector3[count]; var belly = new Vector3[count];
+            var broken = new Vector3[count]; var floor = new Vector3[count];
+            for (int i = 0; i < count; i++)
+            {
+                baseRing[i] = SquarePoint(i, 6, .74f, .74f, 0);
+                Vector3 p = SquarePoint(i, 6, 1.39f, 1.39f, .55f);
+                float corner = Mathf.Min(Mathf.Abs(p.x), Mathf.Abs(p.z)) / 1.39f;
+                belly[i] = V(p.x * (1 - .13f * corner * corner), p.y, p.z * (1 - .13f * corner * corner));
+                // Only the narrow outer lip is fractured; the full 1.3 m half-box is intact.
+                broken[i] = SquarePoint(i, 6, b.Range(1.32f, 1.4f), b.Range(1.32f, 1.4f), i % 3 == 0 ? .95f : b.Range(.80f, .92f));
+                floor[i] = SquarePoint(i, 6, 1.3f, 1.3f, .95f);
+            }
+            for (int i = 0; i < count; i++)
+            {
+                int n = (i + 1) % count;
+                b.Quad(baseRing[i], baseRing[n], belly[n], belly[i], b.Jitter(0x6e7359, .12f));
+                b.Quad(belly[i], belly[n], broken[n], broken[i], b.Jitter(i % 4 == 0 ? 0x888b6d : 0xaaa58a));
+                b.Quad(broken[i], broken[n], floor[n], floor[i], b.Jitter(0xc3bca0, .07f));
+                // Empty, crushed-open cup: pale inner membrane forms the standing floor.
+                // Two concentric, coplanar regions suggest the scraped interior without
+                // making the player hover over an unsupported concave bowl.
+                Vector3 a = V(floor[i].x, 0, floor[i].z).normalized * 1.02f + V(0, .95f, 0);
+                Vector3 c = V(floor[n].x, 0, floor[n].z).normalized * 1.02f + V(0, .95f, 0);
+                b.Quad(floor[i], floor[n], c, a, b.Jitter(i % 7 == 0 ? 0x95967a : 0xc5bda1, .025f));
+                b.Tri(V(.07f, .95f, -.09f), a, c, b.Jitter(0xa6a18a, .025f));
+                b.Tri(Vector3.zero, baseRing[n], baseRing[i], C(0x555e46));
+            }
+            return b.Build("egg shell");
+        }
+
+        public static Mesh SludgeBall()
+        {
+            var b = new MeshBuilder(612);
+            // Ground-origin, roughly one metre tall. Silhouette supplies all detail because
+            // the existing opaque unlit material deliberately ignores vertex colours.
+            b.Rock(V(0, .52f, 0), .41f, Color.white, .14f, 1, 1);
+            b.Rock(V(-.28f, .65f, .12f), .145f, Color.white, .06f, 1, 0);
+            b.Rock(V(.20f, .80f, -.07f), .13f, Color.white, .06f, 1, 0);
+            b.Rock(V(.22f, .43f, .27f), .12f, Color.white, .06f, 1, 0);
+            b.Cylinder(V(.08f, 0, .10f), .012f, .10f, .29f, 4, Color.white);
+            b.Beam(V(-.21f, .31f, -.09f), V(-.24f, .10f, -.07f), .085f, .018f, 4, Color.white);
+            return b.Build("sludge ball");
+        }
     }
 }

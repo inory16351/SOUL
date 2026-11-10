@@ -25,7 +25,7 @@ namespace Soul
 
         void RopeInit()
         {
-            pickups = new Pickups(scene.pickups) { onCollect = it => { if (it.kind == "shard") shards += it.amount; else GainScrap(it.amount); vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
+            pickups = new Pickups(scene.pickups) { onCollect = it => { GainScrap(it.amount); vfx.Flash(Sim.FlatY(ch.root.position, 1), .35f); } };
             var prevKill = enemies.onKill;
             enemies.onKill = e => { prevKill?.Invoke(e); pickups.Burst(e.Center(), e.def.bossName != null ? 10 : e.def.scrap); };
             var cg = scene.ropeCable;

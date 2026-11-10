@@ -50,6 +50,7 @@ namespace Soul
                 foreach (var t in Territories.All)
                 {
                     float d = (t.want - pp).magnitude;
+                    RespawnDue(t, d);   // field members come back on a timer (2026-11-10)
                     if (d > t.r + 320) { if (t.spawned) Despawn(t); continue; }
                     Territories.Place(t); d = (t.c - pp).magnitude;
                     if (!t.spawned && ecology && d < t.r + 120) SpawnTerritory(t);
@@ -177,6 +178,7 @@ namespace Soul
             hunting.Remove(e); roamUntil.Remove(e);
             if (!(e.territory is Territory t) || e.member < 0) return;
             t.dead[e.member] = true;
+            deadAt[(t, e.member)] = realTime;
             if (e.def.eliteName == null) return;
             MireKill(e);   // Z6: the dead shell becomes a platform, its core lies on the hidden ledge
             // elite reward: its part + 40 extra scrap (8 x 5)
@@ -209,7 +211,7 @@ namespace Soul
             SoulAudio.Play("shrine", d.pos);
             if (d.kind == "leap") { Parts.Give(Parts.Leap); Cue("도약 관절 · 점프 중에 한 번 더 점프", 3.5f); }
             else if (d.kind.StartsWith("skill:")) GrantSkill(d.kind.Substring(6));
-            else if (d.kind == "core:toxic") { Parts.Give(Parts.ToxicCore); Cue("독에 잠식된 코어 · 공격에 독이 묻는다 · 칼날이 보라색으로 물든다", 4); }
+            else if (d.kind == "core:toxic") GrantSkill("toxic");   // body-slot passive (2026-11-10)
         }
 
         // ---- caches ----
@@ -245,7 +247,24 @@ namespace Soul
             }
         }
 
-        /// pod rest: every non-elite member comes back (territories in range respawn on the next tick)
+        // ---- timed respawn (user 2026-11-10: mobs respawn over time, no farming limit) ----
+        const float RESPAWN_AFTER = 150, RESPAWN_AWAY = 60;
+        readonly Dictionary<(Territory, int), float> deadAt = new Dictionary<(Territory, int), float>();
+        /// dead non-elite members of `t` come back RESPAWN_AFTER seconds after they died, once the player is RESPAWN_AWAY m
+        /// past the territory edge (a spawned territory is despawned and streams back in with them)
+        void RespawnDue(Territory t, float dist)
+        {
+            if (t.dead == null || dist < t.r + RESPAWN_AWAY) return;
+            bool any = false;
+            for (int i = 0; i < t.dead.Length; i++)
+            {
+                if (!t.dead[i] || t.IsElite(i)) continue;
+                if (deadAt.TryGetValue((t, i), out var at) && realTime - at < RESPAWN_AFTER) continue;
+                t.dead[i] = false; deadAt.Remove((t, i)); any = true;
+            }
+            if (any && t.spawned && !AnyEngaged(t)) Despawn(t);
+        }
+        /// (debug / tests) every non-elite member comes back now (territories in range respawn on the next tick)
         void RespawnField()
         {
             foreach (var t in Territories.All)

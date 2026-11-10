@@ -12,13 +12,19 @@ namespace Soul
     //  - 사냥당하는 유기체 구하기: kill a hound while it is chasing a 재 쥐 and the rat runs for its burrow; two rats
     //    safely home and the burrow gives 30 scrap + 1 조각, and a wisp flock rises and drifts toward the nearest record
     //    you have not heard yet.
-    //  - 붉은 조각 (the 원혼 부품 currency; in-game text never says 원혼): elites 5, specials 2, sentries 1, others 10 %.
-    //  - 숨은 상인: a gentle machine hiding in the ruined streets. G to trade: 수리 키트 (X heals 45 %), and three
+    //  - (2026-11-10) the 붉은 조각 currency is removed: those drops are extra basic parts; normal mobs very rarely drop a slot skill.
+    //  - 숨은 상인: a gentle machine hiding in the ruined streets. G to trade (basic parts): 수리 키트 (X heals 45 %), and three
     //    one-time body parts (+20 max HP, +10 % damage, dash cooldown -15 %).
     // Models are PLACEHOLDERS (Claude): Codex job 21 replaces FieldPropModels.
     public partial class SoulGame
     {
-        public int shards, kits;
+        public int kits;
+        const float RARE_SKILL_DROP = .006f;   // normal mob -> slot-skill part (user 2026-11-10: very rare)
+        string RandomUnownedSkill()
+        {
+            var pool = new List<string>(); foreach (var d in Skills.Defs) if (!d.grudge && !Skills.Has(d.id)) pool.Add(d.id);
+            return pool.Count == 0 ? null : pool[Random.Range(0, pool.Count)];
+        }
         bool perkPlating, perkBlade, perkCoil;
         const int KIT_MAX = 3; const float KIT_HEAL = .45f;
         float kitReady;
@@ -46,9 +52,12 @@ namespace Soul
         {
             // a hound killed mid-hunt: its prey runs home
             if (hunting.TryGetValue(e, out var prey) && prey != null && prey.alive && prey.home is Territory pt) { prey.saved = true; prey.burrow = BurrowOf(pt); }
+            // 2026-11-10: the 붉은 조각 currency is gone; what used to drop as shards drops as extra basic parts (5 each)
             int shard = e.def.eliteName != null ? 5 : e.special ? 2 : e.type == "sentry" ? 1 : Random.value < .1f ? 1 : 0;
+            if (shard > 0) pickups.Burst(e.Center(), shard, 5);
+            // a very rare slot-skill part from a normal mob (an unowned slot skill)
+            if (e.def.eliteName == null && e.def.bossName == null && Random.value < RARE_SKILL_DROP) { var id = RandomUnownedSkill(); if (id != null) SpawnDrop("skill:" + id, e.pos); }
             if (e.special) pickups.Burst(e.Center(), 5, 5);
-            for (int i = 0; i < shard; i++) pickups.Spawn("shard", e.Center() + new Vector3(0, .6f, 0), 1, new Vector3(Random.Range(-2f, 2f), 4.5f, Random.Range(-2f, 2f)));
         }
 
         // ---------- burrows ----------
@@ -65,7 +74,7 @@ namespace Soul
         void BurrowReward(Territory t)
         {
             burrowPaid.Add(t); var at = BurrowOf(t);
-            pickups.Burst(at, 6, 5); pickups.Spawn("shard", at + new Vector3(0, .6f, 0), 1, new Vector3(0, 5, 0));
+            pickups.Burst(at, 6, 5); pickups.Burst(at + new Vector3(0, .6f, 0), 1, 5);
             vfx.Flash(at + Vector3.up, 1); SoulAudio.Play("shrine", at, .6f, 1.3f);
             // the rescued creatures lead on: a wisp flock drifts toward the nearest record not heard yet
             Lore.Record best = null; float bd = 1e9f;
@@ -101,7 +110,7 @@ namespace Soul
                 Mats.SetColor(d.lockMat, unlocked ? new Color(.3f, 2.2f, .6f, 1) : new Color(2.4f, .3f, .2f, 1) * (.8f + .2f * Mathf.Sin(realTime * 4)));
                 if (unlocked && Sim.FlatY(d.pos - p).magnitude < 2.6f && Mathf.Abs(d.pos.y - p.y) < 1.5f)
                 {
-                    d.open = true; pickups.Burst(d.pos + new Vector3(0, .8f, 0), 8, 5); pickups.Spawn("shard", d.pos + new Vector3(0, 1, 0), 1, new Vector3(0, 5, 0));
+                    d.open = true; pickups.Burst(d.pos + new Vector3(0, .8f, 0), 8, 5); pickups.Burst(d.pos + new Vector3(0, 1, 0), 1, 5);
                     vfx.Flash(d.pos + Vector3.up, 1.2f); SoulAudio.Play("pickup", d.pos); Object.Destroy(d.go); d.go = null;
                 }
             }
@@ -142,13 +151,13 @@ namespace Soul
         struct Ware { public string id, name, desc; public int price; }
         static readonly Ware[] Wares =
         {
-            new Ware { id = "kit",     name = "수리 키트",   desc = "X: 최대 체력 45% 즉시 수리 (최대 3개)", price = 3 },
-            new Ware { id = "plating", name = "덧댄 장갑판", desc = "최대 체력 +20",                     price = 6 },
-            new Ware { id = "blade",   name = "벼린 칼날",   desc = "주는 피해 +10%",                    price = 8 },
-            new Ware { id = "coil",    name = "냉각 코일",   desc = "대쉬 쿨다운 -15%",                  price = 6 },
+            new Ware { id = "kit",     name = "수리 키트",   desc = "X: 최대 체력 45% 즉시 수리 (최대 3개)", price = 30 },
+            new Ware { id = "plating", name = "덧댄 장갑판", desc = "최대 체력 +20",                     price = 80 },
+            new Ware { id = "blade",   name = "벼린 칼날",   desc = "주는 피해 +10%",                    price = 80 },
+            new Ware { id = "coil",    name = "냉각 코일",   desc = "대쉬 쿨다운 -15%",                  price = 80 },
         };
         bool Owned(string id) => id == "plating" ? perkPlating : id == "blade" ? perkBlade : id == "coil" && perkCoil;
-        void OpenShop() { shopOpen = true; shopPausedBefore = paused; paused = true; moveTarget = null; shopNote = "…어서 와. 붉은 조각이면 무엇이든 고쳐 주지."; }
+        void OpenShop() { shopOpen = true; shopPausedBefore = paused; paused = true; moveTarget = null; shopNote = "…어서 와. 쓸 만한 부품이면 무엇이든 고쳐 주지."; }
         void CloseShop() { shopOpen = false; paused = shopPausedBefore; }
         /// eats input while the shop is open (G / Esc close it)
         bool ShopInput()
@@ -163,8 +172,8 @@ namespace Soul
             if (w.id == null) return "없는 물건";
             if (id == "kit" && kits >= KIT_MAX) return shopNote = "더는 못 들고 다녀.";
             if (id != "kit" && Owned(id)) return shopNote = "이미 달았잖아.";
-            if (shards < w.price) return shopNote = "조각이 모자라.";
-            shards -= w.price;
+            if (scrap < w.price) return shopNote = "부품이 모자라.";
+            scrap -= w.price;
             if (id == "kit") kits++; else if (id == "plating") perkPlating = true; else if (id == "blade") perkBlade = true; else if (id == "coil") perkCoil = true;
             SoulAudio.Play("pickup", ch.root.position); return shopNote = $"{w.name}. 잘 쓰렴.";
         }
@@ -177,7 +186,7 @@ namespace Soul
             GUI.color = new Color(.05f, .06f, .07f, .95f); GUI.DrawTexture(new Rect(x, y, w, h), white);
             GUI.color = new Color(1, .85f, .55f); GUI.Label(new Rect(x + 20, y + 14, w - 40, 26), "숨은 상인", new GUIStyle(small) { fontSize = 19, fontStyle = FontStyle.Bold });
             GUI.color = new Color(.85f, .85f, .8f); GUI.Label(new Rect(x + 20, y + 44, w - 40, 22), shopNote, new GUIStyle(small) { fontSize = 13, wordWrap = true });
-            GUI.color = new Color(1, .45f, .4f); GUI.Label(new Rect(x + w - 220, y + 16, 200, 22), $"붉은 조각 {shards}   ·   수리 키트 {kits}/{KIT_MAX}", new GUIStyle(small) { fontSize = 13, alignment = TextAnchor.MiddleRight });
+            GUI.color = new Color(1, .45f, .4f); GUI.Label(new Rect(x + w - 220, y + 16, 200, 22), $"기본 부품 {scrap}   ·   수리 키트 {kits}/{KIT_MAX}", new GUIStyle(small) { fontSize = 13, alignment = TextAnchor.MiddleRight });
             for (int i = 0; i < Wares.Length; i++)
             {
                 var it = Wares[i]; var row = new Rect(x + 20, y + 84 + i * 66, w - 40, 58);
@@ -186,8 +195,8 @@ namespace Soul
                 GUI.color = owned ? new Color(.5f, .55f, .6f) : Color.white; GUI.Label(new Rect(row.x + 12, row.y + 6, 260, 22), it.name, new GUIStyle(small) { fontSize = 15, fontStyle = FontStyle.Bold });
                 GUI.color = new Color(.75f, .8f, .85f); GUI.Label(new Rect(row.x + 12, row.y + 30, 330, 20), it.desc, new GUIStyle(small) { fontSize = 12 });
                 var btn = new Rect(row.xMax - 120, row.y + 12, 108, 34);
-                GUI.color = owned ? new Color(.3f, .3f, .3f) : shards >= it.price ? new Color(.85f, .35f, .25f) : new Color(.4f, .25f, .22f); GUI.DrawTexture(btn, white);
-                GUI.color = Color.white; GUI.Label(btn, owned ? "장착함" : $"조각 {it.price}", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 13 });
+                GUI.color = owned ? new Color(.3f, .3f, .3f) : scrap >= it.price ? new Color(.85f, .35f, .25f) : new Color(.4f, .25f, .22f); GUI.DrawTexture(btn, white);
+                GUI.color = Color.white; GUI.Label(btn, owned ? "장착함" : $"부품 {it.price}", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 13 });
                 if (!owned && ev.type == EventType.MouseDown && ev.button == 0 && btn.Contains(ev.mousePosition)) { Buy(it.id); ev.Use(); }
             }
             GUI.color = new Color(.7f, .78f, .85f); GUI.Label(new Rect(x, y + h - 30, w, 20), "G / Esc 닫기", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 12 });
@@ -216,11 +225,11 @@ namespace Soul
         }
 
         /// MCP tests
-        public void GiveShards(int n) => shards += n;
+        public void GiveShards(int n) => scrap += n;   // legacy test hook: shards are basic parts now
         public string FieldReport()
         {
             int sp = 0; foreach (var e in enemies.list) if (e.alive && e.special) sp++;
-            return $"shards {shards} kits {kits} perks plate {perkPlating} blade {perkBlade} coil {perkCoil} | depots {depots.Count} open {depots.FindAll(d => d.open).Count} | specials alive {sp} | burrows paid {burrowPaid.Count} | merchant {MerchantPos():F0}";
+            return $"scrap {scrap} kits {kits} perks plate {perkPlating} blade {perkBlade} coil {perkCoil} | depots {depots.Count} open {depots.FindAll(d => d.open).Count} | specials alive {sp} | burrows paid {burrowPaid.Count} | merchant {MerchantPos():F0}";
         }
     }
 

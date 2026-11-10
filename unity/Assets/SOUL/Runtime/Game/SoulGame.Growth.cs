@@ -18,8 +18,15 @@ namespace Soul
         bool growthOpen, growthPausedBefore; int growthTab; float growthFogT, growthPodT, growthRegenFrom = -99, growthLastHp = -1;
         static Dictionary<string, (float r, float a)> areaBase; static Dictionary<KeyCode, float> cdBase;
 
-        /// basic parts came in (pickup, pod cleanse reward): wallet AND cumulative xp
-        public void GainScrap(int n) { if (n <= 0) return; scrap += n; Growth.Gain(n); }
+        /// basic parts came in (pickup, pod cleanse reward): the wallet only (2026-11-10: xp comes from kills, GainXp)
+        public void GainScrap(int n) { if (n <= 0) return; scrap += n; }
+        /// a kill (SoulGame onKill) gave xp: a new point is announced once
+        public void GainXp(int n)
+        {
+            if (n <= 0 || !skillsInit) return;
+            int before = Growth.Earned(); Growth.Gain(n);
+            if (Growth.Earned() > before) Cue($"성장 포인트 +{Growth.Earned() - before}  ·  {KeyBinds.Name(KeyBinds.Act.Growth)} 성장 화면", 2.2f);
+        }
 
         // ---------- input / open-close ----------
         /// true = the growth screen has this frame's input
@@ -33,6 +40,7 @@ namespace Soul
                 if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Q)) growthTab = 0;
                 if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.E)) growthTab = 1;
                 if (Input.GetKeyDown(KeyCode.Alpha3)) growthTab = 2;
+                if (Input.GetKeyDown(KeyCode.Alpha4)) growthTab = 3;
             }
             return was || growthOpen;
         }
@@ -154,7 +162,9 @@ namespace Soul
             var dst = new Rect(r.x, r.y, src.width * k, src.height * k);
             GUI.DrawTextureWithTexCoords(dst, gNodes, UVof(SZ_NODES, src.x, src.y, src.width, src.height), true); return true;
         }
-        /// ui_skill_icons.png: 4 × 2 cells of 443.5 px, order of Skills.Defs (반격, 회오리, 레이저 파동, 칼날 폭풍, 코어 과부하, 로프 팔, ...)
+        /// ui_skill_icons.png cell of a skill id (-1 = no art yet: UiArt.Icon fallback)
+        static int AtlasIndex(string id) => System.Array.IndexOf(new[] { "counter", "whirl", "wave", "storm", "overload" }, id);
+        /// ui_skill_icons.png: 4 × 2 cells of 443.5 px (반격, 회오리, 레이저 파동, 칼날 폭풍, 코어 과부하, 로프 팔, ...)
         static bool SkillIconArt(Rect r, int index)
         {
             if (!gSkillIcons || index < 0 || index > 7) return false;
@@ -229,8 +239,8 @@ namespace Soul
             // header + tabs
             GUI.color = new Color(.75f, .95f, 1);
             GUI.Label(new Rect(x + pad + 8, y + pad - 4, 200, 30), "성장", new GUIStyle(gTitle) { fontSize = 21 });
-            string[] tabs = { "노드 트리", "스킬 파츠", "기록" };
-            for (int i = 0; i < 3; i++)
+            string[] tabs = { "노드 트리", "슬롯", "모듈", "기록" };
+            for (int i = 0; i < tabs.Length; i++)
             {
                 var tr = new Rect(x + pad + 90 + i * 140, y + pad - 6, 132, 34);
                 Piece(tr, growthTab == i ? P_TAB_ON : P_TAB, 60, 24, growthTab == i ? new Color(.3f, .7f, 1f, .9f) : new Color(.15f, .2f, .25f, .9f));
@@ -238,10 +248,10 @@ namespace Soul
                 if (ev.type == EventType.MouseDown && ev.button == 0 && tr.Contains(ev.mousePosition)) { growthTab = i; ev.Use(); }
             }
             GUI.color = Color.white;
-            GUI.Label(new Rect(x + pad + 520, y + pad - 2, w - 2 * pad - 530, 24),
+            GUI.Label(new Rect(x + pad + 660, y + pad - 2, w - 2 * pad - 670, 24),
                 $"경험치 {Growth.xp}   ·   포인트 {Growth.Points}   ·   지갑 기본 부품 {scrap}   ·   {KeyBinds.Name(KeyBinds.Act.Growth)} / Esc 닫기", new GUIStyle(gNumRight) { fontSize = 13 });
             var body = new Rect(x + pad, y + pad + 36, w - 2 * pad, h - 2 * pad - 36);
-            if (growthTab == 0) TreeTab(body, ev); else if (growthTab == 1) PartsTab(body, ev); else RecordsTab(body, ev);
+            if (growthTab == 0) TreeTab(body, ev); else if (growthTab == 1) SlotsTab(body, ev); else if (growthTab == 2) ModulesTab(body, ev); else RecordsTab(body, ev);
             GUI.color = Color.white;
         }
 
@@ -344,7 +354,7 @@ namespace Soul
             float sy = side.y + 24, sx = side.x + 26, sw = sideW - 52;
             GUI.color = new Color(.6f, .9f, 1); GUI.Label(new Rect(sx, sy, sw, 24), "성장", gTitle); sy += 26;
             GUI.color = new Color(.74f, .8f, .86f);
-            GUI.Label(new Rect(sx, sy, sw, 60), "노드에 마우스를 올리면 설명, 클릭하면 엽니다. 포인트는 기본 부품을 주워 경험치가 쌓이면 생깁니다.", gBody);
+            GUI.Label(new Rect(sx, sy, sw, 60), "노드에 마우스를 올리면 설명, 클릭하면 엽니다. 포인트는 적을 처치해 경험치가 쌓이면 생깁니다. 슬롯 확장 노드는 그 부위 슬롯을 1칸 늘립니다.", gBody);
             // xp bar to the next point
             sy += 62;
             int prevAt = Growth.Threshold(Growth.Earned()), nextAt = Growth.NextAt; float f = Mathf.Clamp01((Growth.xp - prevAt) / (float)Mathf.Max(1, nextAt - prevAt));
@@ -422,51 +432,185 @@ namespace Soul
             GUI.color = new Color(accent.r, accent.g, accent.b, .85f); GUI.DrawTexture(new Rect(r.x + 18, r.y + 6, r.width - 36, 2), white);
         }
 
-        void PartsTab(Rect body, Event ev)
+        // ---------- tab 1: 부위 슬롯 (2026-11-10) ----------
+        string slotSel;   // selected skill id (detail card on the right)
+        /// swapping happens at a charging pod (outside a boss fight)
+        bool AtPod => NearPod(4.2f) != null && fightArena == null;
+        static readonly Color[] SlotColors = { new Color(.8f, .6f, 1f), new Color(1f, .45f, .35f), new Color(1f, .8f, .35f), new Color(.45f, .85f, 1f), new Color(.5f, 1f, .55f) };
+
+        /// equip / unequip by id (UI clicks and MCP tests); `force` skips the pod rule
+        public string SlotToggle(string id, bool force = false)
+        {
+            var o = Skills.Get(id); if (o == null) return "없는 스킬";
+            if (o.def.grudge) return "원혼 파츠는 뗄 수 없다";
+            if (!force && !AtPod) return "충전 포드 앞에서만 바꿀 수 있다";
+            if (o.equipped) { Skills.Unequip(o); return $"{o.def.name} 해제"; }
+            var blk = Skills.EquipBlocker(o); if (blk != null) return blk;
+            Skills.Equip(o);
+            if (o.Active && o.key == KeyCode.None) { bindPending = o; return $"{o.def.name} 장착 — 사용할 키를 누르세요"; }
+            return $"{o.def.name} 장착";
+        }
+
+        void SlotsTab(Rect body, Event ev)
         {
             GUI.color = new Color(.02f, .035f, .05f, gPanel ? .55f : .9f); GUI.DrawTexture(body, white);
-            float yy = body.y + 14, x = body.x + 18, w = body.width - 36;
-            GUI.color = new Color(.8f, .85f, .9f);
-            GUI.Label(new Rect(x, yy, w, 20), $"스킬 파츠 강화는 지갑의 기본 부품을 씁니다 (Lv2 {Skills.UPGRADE_COST[0]} · Lv3 {Skills.UPGRADE_COST[1]} · Lv4 {Skills.UPGRADE_COST[2]} · Lv5 {Skills.UPGRADE_COST[3]}).  키 변경은 설정 창(Esc)의 키 설정에서 합니다.", gSmall);
-            yy += 32;
-            if (Skills.owned.Count == 0) { GUI.color = Color.white; GUI.Label(new Rect(x, yy, w, 20), "아직 스킬이 없다. 파츠를 찾아 몸에 달면 스킬이 생긴다.", gSmall); return; }
-            float rowH = Mathf.Min(96, (body.height - 60) / Mathf.Max(1, Skills.owned.Count));
+            float sideW = Mathf.Min(300, body.width * .3f);
+            var left = new Rect(body.x + 14, body.y + 10, body.width - sideW - 36, body.height - 20);
+            // status line
+            bool pod = AtPod;
+            GUI.color = pod ? new Color(.55f, 1, .65f) : new Color(1, .7f, .5f);
+            GUI.Label(new Rect(left.x, left.y, left.width, 20), pod ? "◆ 충전 포드 — 클릭해서 장착 / 해제" : "◆ 교체는 충전 포드 앞에서만 할 수 있다 (강화는 어디서나)", gSmallBold);
+            GUI.color = Skills.ActiveCount >= Skills.MAX_ACTIVE ? new Color(1, .75f, .5f) : new Color(.8f, .86f, .92f);
+            GUI.Label(new Rect(left.x, left.y, left.width, 20), $"액티브 {Skills.ActiveCount} / {Skills.MAX_ACTIVE}   ·   기본 부품 {scrap}", gNumRight);
+            // five part columns
+            float colW = (left.width - 4 * 10) / 5, slotH = 62, cy = left.y + 30;
+            Skills.Owned hover = null;
+            for (int p = 0; p < 5; p++)
+            {
+                var s = (Slot)p; var col = SlotColors[p];
+                float cx = left.x + p * (colW + 10);
+                GUI.color = col; GUI.Label(new Rect(cx, cy, colW, 22), Skills.SlotNames[p], gTitle);
+                GUI.color = new Color(.7f, .76f, .82f); GUI.Label(new Rect(cx, cy, colW, 22), $"{Skills.Used(s)}/{Skills.SlotCount(s)}", gNumRight);
+                var eq = new List<Skills.Owned>(); foreach (var o in Skills.owned) if (o.equipped && !o.def.grudge && o.def.slot == s) eq.Add(o);
+                for (int k = 0; k < Skills.MAX_SLOTS; k++)
+                {
+                    var r = new Rect(cx, cy + 26 + k * (slotH + 6), colW, slotH);
+                    bool open = k < Skills.SlotCount(s);
+                    GUI.color = open ? new Color(.07f, .1f, .13f, .95f) : new Color(.04f, .045f, .05f, .8f); GUI.DrawTexture(r, white);
+                    GUI.color = open ? new Color(col.r, col.g, col.b, .55f) : new Color(.3f, .32f, .35f, .5f);
+                    GUI.DrawTexture(new Rect(r.x, r.y, r.width, 1), white); GUI.DrawTexture(new Rect(r.x, r.yMax - 1, r.width, 1), white);
+                    if (!open) { GUI.color = new Color(.45f, .48f, .52f); GUI.Label(r, "잠김 · 노드로 확장", new GUIStyle(gSmall) { alignment = TextAnchor.MiddleCenter }); continue; }
+                    if (k >= eq.Count) { GUI.color = new Color(.45f, .5f, .55f); GUI.Label(r, "빈 슬롯", new GUIStyle(gSmall) { alignment = TextAnchor.MiddleCenter }); continue; }
+                    var o = eq[k]; bool over = r.Contains(ev.mousePosition); if (over) hover = o;
+                    SkillChip(r, o, col, over || slotSel == o.def.id);
+                    if (over && ev.type == EventType.MouseDown && ev.button == 0) { ev.Use(); slotSel = o.def.id; if (pod) Cue(SlotToggle(o.def.id), 1.6f); }
+                }
+                // grudge parts of this body part: outside the slots, permanent
+                float gy = cy + 26 + Skills.MAX_SLOTS * (slotH + 6);
+                foreach (var o in Skills.owned)
+                {
+                    if (!o.def.grudge || o.def.slot != s) continue;
+                    var r = new Rect(cx, gy, colW, 34);
+                    GUI.color = new Color(.25f, .04f, .05f, .9f); GUI.DrawTexture(r, white);
+                    GUI.color = new Color(1, .45f, .4f); GUI.Label(new Rect(r.x + 8, r.y, r.width - 10, r.height), "● " + o.def.name, gSmallBold);
+                    if (r.Contains(ev.mousePosition)) { hover = o; if (ev.type == EventType.MouseDown && ev.button == 0) { ev.Use(); slotSel = o.def.id; } }
+                    gy += 38;
+                }
+            }
+            // storage: owned, not equipped
+            float sy = cy + 26 + Skills.MAX_SLOTS * (slotH + 6) + 48;
+            GUI.color = new Color(.75f, .85f, .95f); GUI.Label(new Rect(left.x, sy, 300, 22), "보관함", gTitle); sy += 26;
+            int shown = 0; float bw = (left.width - 3 * 8) / 4, bh = 48;
             foreach (var o in Skills.owned)
             {
-                var row = new Rect(x, yy, w, rowH - 8);
-                GUI.color = new Color(.08f, .12f, .16f, .8f); GUI.DrawTexture(row, white);
-                var ic = new Rect(row.x + 10, row.y + (row.height - 56) / 2, 56, 56);
-                int idx = System.Array.IndexOf(Skills.Defs, o.def);
-                GUI.color = Color.white; if (!SkillIconArt(ic, idx) && !UiArt.Icon(ic, o.def.icon)) { GUI.color = new Color(.3f, .6f, .9f); GUI.DrawTexture(ic, white); }
-                float tx = ic.xMax + 14;
-                GUI.color = Color.white;
-                GUI.Label(new Rect(tx, row.y + 8, 360, 22), $"{o.def.name}   Lv {o.level} / {Skills.MAX_LEVEL}", gTitle);
-                GUI.color = new Color(.75f, .8f, .85f);
-                float cd = Skills.Cooldown(o, o.def.id == "counter" ? Growth.CounterCdScale : 1);
-                string main = o.def.id == "overload" ? $"지속 {Skills.OVERLOAD_TIME + .5f * (o.level - 1) + Skills.Perk(o, Skills.PerkKind.Duration):F1}초 · 초당 회복 {(Skills.OVERLOAD_REGEN + Skills.Perk(o, Skills.PerkKind.Regen)) * 100:F0}%" : $"피해 ×{Skills.DamageScale(o):F2}";
-                GUI.Label(new Rect(tx, row.y + 30, 520, 20), $"{o.def.part}  ·  키 {(o.key == KeyCode.None ? "-" : KeyName(o.key))}  ·  {main}  ·  쿨다운 {cd:F1}초", gSmall);
-                // perks
-                float px = tx;
-                foreach (var p in Skills.Perks)
-                {
-                    if (p.skill != o.def.id) continue;
-                    bool on = o.level >= p.level; string t = $"Lv{p.level} {p.desc}";
-                    GUI.color = on ? new Color(.55f, 1, .65f) : new Color(.5f, .55f, .6f);
-                    GUI.Label(new Rect(px, row.y + 52, 200, 20), (on ? "✔ " : "· ") + t, gSmall); px += 200;
-                }
-                // upgrade
-                var br = new Rect(row.xMax - 190, row.y + (row.height - 40) / 2, 176, 40);
-                bool max = o.level >= Skills.MAX_LEVEL; int cost = Skills.Cost(o); bool can = !max && scrap >= cost;
-                Piece(br, max || !can ? P_BTN_OFF : br.Contains(ev.mousePosition) ? P_BTN_HI : P_BTN, 60, 45, max ? new Color(.2f, .22f, .25f) : can ? new Color(.2f, .55f, .9f) : new Color(.25f, .25f, .3f));
-                GUI.color = can || max ? Color.white : new Color(1, .65f, .55f);
-                GUI.Label(br, max ? "최대 레벨" : $"강화  ·  기본 부품 {cost}", new GUIStyle(gNum) { fontSize = 13 });
-                if (ev.type == EventType.MouseDown && ev.button == 0 && br.Contains(ev.mousePosition))
-                {
-                    ev.Use();
-                    if (Skills.LevelUp(o, ref scrap)) Cue($"{o.def.name} Lv {o.level}", 1.4f);
-                    else if (!max) Cue($"기본 부품이 부족하다 ({scrap}/{cost})", 1.2f);
-                }
-                yy += rowH;
+                if (o.equipped || o.def.grudge) continue;
+                var r = new Rect(left.x + (shown % 4) * (bw + 8), sy + (shown / 4) * (bh + 6), bw, bh); shown++;
+                if (r.yMax > left.yMax) break;
+                bool over = r.Contains(ev.mousePosition); if (over) hover = o;
+                GUI.color = new Color(.06f, .08f, .1f, .95f); GUI.DrawTexture(r, white);
+                SkillChip(r, o, SlotColors[(int)o.def.slot], over || slotSel == o.def.id);
+                if (over && ev.type == EventType.MouseDown && ev.button == 0) { ev.Use(); slotSel = o.def.id; if (pod) Cue(SlotToggle(o.def.id), 1.6f); }
+            }
+            if (shown == 0) { GUI.color = new Color(.55f, .6f, .65f); GUI.Label(new Rect(left.x, sy, left.width, 20), Skills.owned.Count == 0 ? "아직 스킬이 없다. 엘리트, 숨은 곳, 상인에게서 부품을 얻으면 생긴다." : "보관 중인 스킬 없음", gSmall); }
+            // detail card
+            var sel = Skills.Get(hover != null ? hover.def.id : slotSel ?? "");
+            var side = new Rect(body.xMax - sideW - 10, body.y + 10, sideW, body.height - 20);
+            Card(side, sel != null ? SlotColors[(int)sel.def.slot] : new Color(.45f, .8f, 1f));
+            float x = side.x + 24, w = side.width - 48, yy = side.y + 22;
+            if (sel == null)
+            {
+                GUI.color = new Color(.74f, .8f, .86f);
+                GUI.Label(new Rect(x, yy, w, 200), "스킬은 정해진 부위 슬롯에 넣어야 작동한다. 슬롯은 부위마다 1칸에서 시작해 노드로 3칸까지 늘어난다. 액티브는 동시에 6개까지. 원혼 파츠는 슬롯 밖에 붙는다.", gBody);
+                return;
+            }
+            var c = SlotColors[(int)sel.def.slot];
+            var ic = new Rect(x, yy, 54, 54); int idx = AtlasIndex(sel.def.id);
+            GUI.color = Color.white; if (!SkillIconArt(ic, idx) && !UiArt.Icon(ic, sel.def.icon)) { GUI.color = c; GUI.DrawTexture(ic, gDisc); }
+            GUI.color = c; GUI.Label(new Rect(ic.xMax + 10, yy + 2, w - 64, 24), sel.def.name, gTitle);
+            GUI.color = new Color(.72f, .78f, .84f);
+            GUI.Label(new Rect(ic.xMax + 10, yy + 28, w - 64, 20), $"{Skills.SlotNames[(int)sel.def.slot]} · {(sel.def.grudge ? "원혼 파츠" : sel.def.passive ? "패시브" : "액티브")} · {sel.def.part}", gSmall);
+            yy += 64;
+            GUI.color = Color.white; GUI.Label(new Rect(x, yy, w, 40), sel.def.desc, gBody); yy += 44;
+            GUI.color = new Color(.8f, .85f, .9f);
+            string st = sel.def.passive ? $"Lv {sel.level} / {Skills.MAX_LEVEL}" : $"Lv {sel.level} / {Skills.MAX_LEVEL}  ·  피해 ×{Skills.DamageScale(sel):F2}  ·  쿨 {Skills.Cooldown(sel, sel.def.id == "counter" ? Growth.CounterCdScale : 1):F1}초";
+            GUI.Label(new Rect(x, yy, w, 20), st, gSmall); yy += 22;
+            if (sel.Active) { GUI.Label(new Rect(x, yy, w, 20), $"키 {(sel.key == KeyCode.None ? "-" : KeyName(sel.key))}  (Esc 설정 · 키 설정)", gSmall); yy += 22; }
+            foreach (var pk in Skills.Perks)
+            {
+                if (pk.skill != sel.def.id) continue;
+                bool on = sel.level >= pk.level; GUI.color = on ? new Color(.55f, 1, .65f) : new Color(.5f, .55f, .6f);
+                GUI.Label(new Rect(x, yy, w, 20), (on ? "✔ " : "· ") + $"Lv{pk.level} {pk.desc}", gSmall); yy += 20;
+            }
+            GUI.color = sel.On ? new Color(.55f, 1, .65f) : new Color(1, .75f, .5f);
+            GUI.Label(new Rect(x, yy + 4, w, 20), sel.def.grudge ? "● 영구 장착 (뗄 수 없음)" : sel.equipped ? "● 장착 중" : "○ 보관 중 — " + (Skills.EquipBlocker(sel) ?? "장착 가능"), gSmallBold);
+            // buttons: upgrade (anywhere), equip / unequip (pod)
+            var ub = new Rect(x, side.yMax - 104, w, 40);
+            bool max = sel.level >= Skills.MAX_LEVEL; int cost = Skills.Cost(sel); bool can = !max && scrap >= cost;
+            Piece(ub, max || !can ? P_BTN_OFF : ub.Contains(ev.mousePosition) ? P_BTN_HI : P_BTN, 60, 45, max ? new Color(.2f, .22f, .25f) : can ? new Color(.2f, .55f, .9f) : new Color(.25f, .25f, .3f));
+            GUI.color = can || max ? Color.white : new Color(1, .65f, .55f);
+            GUI.Label(ub, max ? "최대 레벨" : $"강화  ·  기본 부품 {cost}", new GUIStyle(gNum) { fontSize = 13 });
+            if (ev.type == EventType.MouseDown && ev.button == 0 && ub.Contains(ev.mousePosition))
+            {
+                ev.Use();
+                if (Skills.LevelUp(sel, ref scrap)) Cue($"{sel.def.name} Lv {sel.level}", 1.4f);
+                else if (!max) Cue($"기본 부품이 부족하다 ({scrap}/{cost})", 1.2f);
+            }
+            if (!sel.def.grudge)
+            {
+                var eb = new Rect(x, side.yMax - 56, w, 40);
+                bool ok = pod && (sel.equipped || Skills.EquipBlocker(sel) == null);
+                Piece(eb, !ok ? P_BTN_OFF : eb.Contains(ev.mousePosition) ? P_BTN_HI : P_BTN, 60, 45, ok ? new Color(.2f, .55f, .9f) : new Color(.25f, .25f, .3f));
+                GUI.color = ok ? Color.white : new Color(.6f, .64f, .68f);
+                GUI.Label(eb, sel.equipped ? "해제" : "장착", new GUIStyle(gNum) { fontSize = 13 });
+                if (ev.type == EventType.MouseDown && ev.button == 0 && eb.Contains(ev.mousePosition)) { ev.Use(); Cue(SlotToggle(sel.def.id), 1.6f); }
+            }
+        }
+        /// one skill in a slot / storage cell: icon, name, Lv, active/passive tag
+        void SkillChip(Rect r, Skills.Owned o, Color col, bool hi)
+        {
+            if (hi) { GUI.color = new Color(col.r, col.g, col.b, .18f); GUI.DrawTexture(r, white); }
+            float s = Mathf.Min(r.height - 12, 44); var ic = new Rect(r.x + 6, r.y + (r.height - s) / 2, s, s);
+            int idx = AtlasIndex(o.def.id);
+            GUI.color = Color.white; if (!SkillIconArt(ic, idx) && !UiArt.Icon(ic, o.def.icon)) { GUI.color = col; GUI.DrawTexture(ic, gDisc); }
+            float tx = ic.xMax + 8, tw = r.xMax - tx - 4;
+            GUI.color = Color.white; GUI.Label(new Rect(tx, r.y + r.height / 2 - 19, tw, 20), o.def.name, gSmallBold);
+            GUI.color = o.def.passive ? new Color(.6f, .9f, .7f) : new Color(.6f, .8f, 1f);
+            GUI.Label(new Rect(tx, r.y + r.height / 2 + 1, tw, 18), $"{(o.def.passive ? "패시브" : "액티브")} · Lv {o.level}" + (o.Active && o.equipped && o.key != KeyCode.None ? $" · {KeyName(o.key)}" : ""), gSmall);
+        }
+
+        // ---------- tab 2: 모듈 업그레이드 (movement, always on) ----------
+        static readonly (int part, string what)[] ModuleRows =
+        {
+            (Parts.Rope, "벽 너머 고정점에 로프를 걸어 끌려 올라간다"),
+            (Parts.Leap, "점프 중에 한 번 더 점프 (이단 점프)"),
+            (Parts.Jet, "제트 분사로 넓은 틈을 건넌다"),
+            (Parts.Cannon, "캐논 포로 잔해 벽을 부순다"),
+            (Parts.Magnet, "자석 다리로 철 외벽을 탄다"),
+            (Parts.Toxic, "내오염 코어로 슬러지를 건넌다"),
+            (Parts.LabKeys, "연구소 문을 연다"),
+        };
+        void ModulesTab(Rect body, Event ev)
+        {
+            GUI.color = new Color(.02f, .035f, .05f, gPanel ? .55f : .9f); GUI.DrawTexture(body, white);
+            float x = body.x + 18, w = body.width - 36, yy = body.y + 14;
+            GUI.color = new Color(.8f, .85f, .9f);
+            GUI.Label(new Rect(x, yy, w, 20), "모듈 업그레이드는 몸의 제어 소프트웨어에 새겨진다. 슬롯과 상관없이 항상 켜져 있다.", gSmall); yy += 30;
+            float rh = Mathf.Min(72, (body.height - 60) / ModuleRows.Length);
+            foreach (var m in ModuleRows)
+            {
+                bool has = Parts.Has(m.part);
+                var row = new Rect(x, yy, w, rh - 8);
+                GUI.color = has ? new Color(.06f, .12f, .14f, .9f) : new Color(.04f, .05f, .06f, .8f); GUI.DrawTexture(row, white);
+                GUI.color = has ? new Color(.45f, .95f, 1f, .7f) : new Color(.3f, .33f, .36f, .5f); GUI.DrawTexture(new Rect(row.x, row.y, 3, row.height), white);
+                var ic = new Rect(row.x + 14, row.y + (row.height - 40) / 2, 40, 40);
+                GUI.color = has ? Color.white : new Color(1, 1, 1, .25f); UiArt.Icon(ic, UiArt.PartIcon(m.part));
+                GUI.color = has ? Color.white : new Color(.5f, .54f, .58f);
+                GUI.Label(new Rect(ic.xMax + 14, row.y + row.height / 2 - 20, 300, 22), has ? Parts.Names[m.part] : "??? 미획득", gTitle);
+                GUI.color = has ? new Color(.75f, .82f, .88f) : new Color(.45f, .48f, .52f);
+                GUI.Label(new Rect(ic.xMax + 14, row.y + row.height / 2 + 2, w - 200, 20), has ? m.what : "어딘가에서 이 모듈을 얻을 수 있다", gSmall);
+                GUI.color = has ? new Color(.55f, 1, .65f) : new Color(.45f, .48f, .52f);
+                GUI.Label(new Rect(row.xMax - 140, row.y, 126, row.height), has ? "● 항상 켜짐" : "○ 없음", gNumRight);
+                yy += rh;
             }
         }
     }

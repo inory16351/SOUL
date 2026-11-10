@@ -76,7 +76,7 @@ namespace Soul
                     else vfx.Dust(p, .7f);
                     if (Vector3.Distance(p, ch.root.position) < 8) cam.Shake(a.name == "slam" ? .1f : .04f);
                 },
-                onKill = e => kills++,
+                onKill = e => { kills++; GainXp(Growth.KillXp(e.def)); },   // 2026-11-10: xp from kills
                 onStep = (p, s) => { vfx.Dust(p, .8f * s); if (Vector3.Distance(p, ch.root.position) < 18) cam.Shake(.02f * s); },   // heavy footfalls (boss)
             };
             breakables = new Breakables(scene.breakables, vfx, 12, BOUNDS - 1);

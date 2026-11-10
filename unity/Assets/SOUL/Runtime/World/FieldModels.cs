@@ -178,6 +178,77 @@ namespace Soul
         {
             var b = new MeshBuilder(80);
             if (kind == "skill:wave") WaveModule(b);
+            else if (kind == "core:toxic")
+            {
+                // Swallowed reactor cartridge. Flat sides and separated fins still read
+                // through the caller's single gold unlit material; retain toxic vertex colours.
+                b.Cylinder(Vector3.zero, .17f, .17f, .045f, 10, C(Rust));
+                b.Cylinder(V(0, .045f, 0), .143f, .132f, .255f, 10, C(Steel));
+                b.Cylinder(V(0, .30f, 0), .16f, .147f, .04f, 10, C(0x807057));
+                for (int i = 0; i < 8; i++)
+                {
+                    float angle = i * Mathf.PI / 4;
+                    b.Push(); b.RotateY(angle);
+                    b.Box(V(0, .17f, .165f), V(.021f, b.Range(.18f, .25f), .12f), b.Jitter(i % 3 == 0 ? Rust : Steel));
+                    b.Pop();
+                }
+                // Six faceted crystals, asymmetrically consuming the lid and one side.
+                for (int i = 0; i < 6; i++)
+                {
+                    float angle = i * 2.1f, radius = i < 4 ? .10f : .16f;
+                    Vector3 baseAt = V(Mathf.Sin(angle) * radius, i < 4 ? .31f : .17f, Mathf.Cos(angle) * radius);
+                    b.Push(); b.Translate(baseAt); b.RotateZ(b.Range(-.35f, .35f)); b.RotateX(b.Range(-.25f, .25f));
+                    float r = b.Range(.031f, .050f), height = b.Range(.10f, .16f);
+                    Vector3 tip = V(r * .35f, height, -r * .25f);
+                    Vector3[] corners = { V(-r, 0, -r), V(-r, 0, r), V(r, 0, r), V(r, 0, -r) };
+                    for (int k = 0; k < 4; k++)
+                        b.Tri(corners[k], corners[(k + 1) % 4], tip, b.Jitter(i % 2 == 0 ? 0x756080 : 0x718455, .12f));
+                    b.Quad(corners[3], corners[2], corners[1], corners[0], C(0x434c34));
+                    b.Pop();
+                    Vector3 root = V(baseAt.x * .83f, .09f, baseAt.z * .83f);
+                    Vector3 bend = V(baseAt.x * 1.12f, .22f, baseAt.z * 1.12f);
+                    b.Beam(root, bend, .014f, .010f, 3, C(0x596d42));
+                    b.Beam(bend, baseAt + V(0, .02f, 0), .010f, .006f, 3, C(0x6b5070));
+                }
+            }
+            else if (kind == "skill:suck")
+            {
+                // Upturned +Z intake: an open funnel and hose bore, not a capped cylinder.
+                b.Box(V(0, .024f, -.025f), V(.23f, .048f, .24f), C(Steel));
+                b.Push(); b.Translate(0, .23f, .025f); b.RotateX(.95f);
+                const int count = 12;
+                for (int i = 0; i < count; i++)
+                {
+                    float a = i * Mathf.PI * 2 / count, c = (i + 1) * Mathf.PI * 2 / count;
+                    Vector3 u = V(Mathf.Sin(a), 0, Mathf.Cos(a)), v = V(Mathf.Sin(c), 0, Mathf.Cos(c));
+                    Vector3 outerA = u * .225f + V(0, .065f, 0), outerC = v * .225f + V(0, .065f, 0);
+                    Vector3 innerA = u * .183f + V(0, .065f, 0), innerC = v * .183f + V(0, .065f, 0);
+                    Vector3 throatA = u * .070f + V(0, -.10f, 0), throatC = v * .070f + V(0, -.10f, 0);
+                    Vector3 backA = u * .070f + V(0, -.24f, 0), backC = v * .070f + V(0, -.24f, 0);
+                    b.Quad(throatA + u * .025f, throatC + v * .025f, outerC, outerA, b.Jitter(Steel));
+                    b.Quad(outerA, outerC, innerC, innerA, b.Jitter(Rust));
+                    b.Quad(innerC, throatC, throatA, innerA, C(0x343a33));
+                    b.Quad(throatC, backC, backA, throatA, C(Soot));
+                    b.Quad(backA + u * .025f, backC + v * .025f, throatC + v * .025f, throatA + u * .025f, C(0x42473d));
+                    b.Quad(backC + v * .025f, backA + u * .025f, backA, backC, C(Rust));
+                    // Alternate teeth have lost their tips. Closed wedges leave open air between.
+                    Vector3 tooth = (u + v).normalized * (i % 4 == 0 ? .160f : .132f) + V(0, .085f, 0);
+                    Vector3 ta = Vector3.Lerp(innerA, innerC, .20f), tc = Vector3.Lerp(innerA, innerC, .80f);
+                    Vector3 down = V(0, -.026f, 0);
+                    b.Tri(ta, tc, tooth, C(0x99856b));
+                    b.Tri(tooth + down, tc + down, ta + down, C(Rust));
+                    b.Quad(ta, tooth, tooth + down, ta + down, C(Steel));
+                    b.Quad(tooth, tc, tc + down, tooth + down, C(Rust));
+                    b.Quad(tc, ta, ta + down, tc + down, C(Steel));
+                }
+                // Corrugated hose collars leave the throat open all the way through.
+                for (int k = 0; k < 3; k++)
+                {
+                    b.Cylinder(V(0, -.225f + k * .045f, 0), .103f, .103f, .018f, 8, C(Rust), false);
+                    b.Disc(V(0, -.207f + k * .045f, 0), .095f, .103f, 8, C(0x7a6b51));
+                }
+                b.Pop();
+            }
             else LeapJoint(b);
             return b.Build("part drop");
         }

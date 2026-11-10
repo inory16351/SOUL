@@ -18,12 +18,19 @@ namespace Soul
             aura = new OverloadAura(transform);   // Fx/OverloadAura (Codex 14): flame tongues, breathing ground glow, embers
         }
 
-        /// a part gave a skill: learn it and ask for a key (World/Skills.ShrineSkill, GrudgeSkill)
+        /// a part gave a skill: learn it, put it in a free slot of its part if there is one (actives then ask for a key),
+        /// otherwise it waits in storage until it is swapped in at a pod (부위 슬롯, 2026-11-10)
         public void GrantSkill(string id)
         {
             if (!skillsInit) SkillsInit();
             var o = Skills.Grant(id); if (o == null) return;
-            bindPending = o; Cue($"새 스킬 · {o.def.name} ({o.def.part}) — 사용할 키를 누르세요 · Esc 나중에", 6);
+            string where = o.def.grudge ? "원혼 파츠" : Skills.SlotNames[(int)o.def.slot] + " 슬롯";
+            if (o.def.grudge || Skills.Equip(o))
+            {
+                if (o.Active) { bindPending = o; Cue($"새 스킬 · {o.def.name} ({where}) — 사용할 키를 누르세요 · Esc 나중에", 6); }
+                else Cue($"새 스킬 · {o.def.name} ({where}) · {o.def.desc}", 4);
+            }
+            else Cue($"새 스킬 · {o.def.name} — {Skills.EquipBlocker(o)} · 보관함에 넣었다 (충전 포드에서 교체)", 4.5f);
         }
 
         /// MCP tests: cast a learned skill as if its key were pressed; overload time left
@@ -36,7 +43,7 @@ namespace Soul
         {
             if (!skillsInit) SkillsInit();
             if (GrowthInput()) return true;   // Tab growth screen: pauses and swallows every key / click (no rope)
-            if (Input.GetKeyDown(KeyCode.F2)) { foreach (var d in Skills.Defs) if (d.legacy != KeyCode.None) { var o = Skills.Grant(d.id) ?? Skills.Get(d.id); Skills.Bind(o, d.legacy); } bindPending = null; Cue("[디버그] 기본 스킬 4개 획득 (Q W E R)", 1.6f); }
+            if (Input.GetKeyDown(KeyCode.F2)) { foreach (var d in Skills.Defs) if (d.legacy != KeyCode.None) { var o = Skills.Grant(d.id) ?? Skills.Get(d.id); o.equipped = true; Skills.Bind(o, d.legacy); } bindPending = null; Cue("[디버그] 기본 스킬 4개 획득 (Q W E R)", 1.6f); }
             if (bindPending != null)
             {
                 if (Input.GetKeyDown(KeyCode.Escape)) { Cue($"{bindPending.def.name} · 키 미지정 (Esc 설정 창의 키 설정에서 지정)", 2.4f); bindPending = null; return true; }
@@ -47,13 +54,13 @@ namespace Soul
                 }
                 return false;
             }
-            foreach (var o in Skills.owned) if (o.key != KeyCode.None && Input.GetKeyDown(o.key)) CastSkill(o);
+            foreach (var o in Skills.owned) if (o.On && o.Active && o.key != KeyCode.None && Input.GetKeyDown(o.key)) CastSkill(o);
             return false;
         }
 
         void CastSkill(Skills.Owned o)
         {
-            if (!player.alive || o.ready > realTime) return;
+            if (!player.alive || o.ready > realTime || !o.On || !o.Active) return;
             if (o.def.id == "suck") { if (!CanAct()) return; FaceCursor(); CastSuck(); }   // 거대 준설기 skill (SoulGame.Mire)
             else if (o.def.id == "overload")
             {
@@ -108,6 +115,7 @@ namespace Soul
             list.Add((KeyBinds.Name(KeyBinds.Act.Attack), "연속 베기", UiArt.SLASH, 0));
             foreach (var o in Skills.owned)
             {
+                if (!o.On || !o.Active) continue;   // passives / stored skills have no button
                 float left = o.ready > realTime ? (o.ready - realTime) / SkillCooldown(o) : 0;
                 if (o.def.id == "overload" && overloadLeft > 0) left = 0;
                 list.Add((o.key == KeyCode.None ? "-" : KeyName(o.key), o.def.name, o.def.icon, left));

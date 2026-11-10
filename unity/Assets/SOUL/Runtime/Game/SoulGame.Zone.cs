@@ -163,7 +163,7 @@ namespace Soul
             var sh = NearShrine(5); if (sh != null && player.alive && fightArena == null) { Resonate(sh); return; }
             var pod = NearPod(4.2f); if (pod == null || !player.alive || fightArena != null) return;
             pod.found = true; restPod = pod; player.hp = player.max;
-            RespawnField();   // field monsters come back (elites stay dead)
+            // (2026-11-10) field monsters no longer come back on rest: they respawn on a timer (SoulGame.Ecology RespawnDue)
             vfx.Ring(Sim.FlatY(pod.pos, .5f), 1.6f, true); vfx.Flash(Sim.FlatY(pod.pos, 1.4f), 1);
             Cue($"충전 완료 · {pod.name} 에 저장됨", 2);
         }
@@ -308,7 +308,7 @@ namespace Soul
                 }
             }
             GUI.color = Color.white;
-            GUI.Label(new Rect(22, 64, 420, 20), $"기본 부품 {scrap}   ·   붉은 조각 {shards}   ·   수리 키트 {kits} (X)", small);
+            GUI.Label(new Rect(22, 64, 420, 20), $"기본 부품 {scrap}   ·   경험치 {Growth.xp} (포인트 {Growth.Points})   ·   수리 키트 {kits} (X)", small);
             if (debugHud) GUI.Label(new Rect(20, 122, 520, 20), $"표정 {ZoneState.Count}/{PixelFace.ORDER.Length}   ·   K 정화 토글   ·   Shift+클릭 지도 순간이동", small);
         }
     }

@@ -150,7 +150,7 @@ namespace Soul
         void KeysTab(Rect b)
         {
             float rowH = 32, footer = 80;
-            int skillRows = Skills.owned.Count;
+            int skillRows = Skills.owned.FindAll(o => o.Active).Count;   // passives have no key
             bool two = b.width >= 600;   // wide: basic controls | skills side by side
             float basicH = 28 + (KeyBinds.All.Length + 2) * rowH, skillH = 28 + Mathf.Max(1, skillRows) * rowH;
             float contentH = two ? Mathf.Max(basicH, skillH) : basicH + 10 + skillH;
@@ -165,7 +165,7 @@ namespace Soul
             float sx = two ? cw + 24 : 0; y = two ? 0 : y + 10;
             Section(new Rect(sx, y, cw, 24), "스킬 (얻은 파츠)"); y += 28;
             if (skillRows == 0) { GUI.color = new Color(.6f, .7f, .78f); GUI.Label(new Rect(sx + 8, y, cw, rowH - 4), "아직 얻은 스킬이 없습니다.", setLabel); GUI.color = Color.white; }
-            foreach (var o in Skills.owned) { KeyRow(new Rect(sx, y, cw, rowH - 4), new BindTarget { skill = o }); y += rowH; }
+            foreach (var o in Skills.owned) { if (!o.Active) continue; KeyRow(new Rect(sx, y, cw, rowH - 4), new BindTarget { skill = o }); y += rowH; }
             GUI.EndScrollView();
             // footer: listening / conflict / note + defaults
             var f = new Rect(b.x, b.yMax - footer + 8, b.width, footer - 8);

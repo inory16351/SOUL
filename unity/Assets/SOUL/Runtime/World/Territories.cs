@@ -170,7 +170,7 @@ namespace Soul
     // the hidden ledge (Caches) stands just east of it, reachable only from the dead shell.
     public static class MirePools
     {
-        public static readonly Vector2 Host = new Vector2(1050, 760), Ledge = new Vector2(1050 + 11, 760);
+        public static readonly Vector2 Host = new Vector2(1050, 760), Ledge = new Vector2(1050 + 10.2f, 760);
         public const float HOST_R = 8.5f;
         public struct Pool { public Vector2 c; public float r; }
         public static readonly Pool[] All = { new Pool { c = Host, r = HOST_R } };

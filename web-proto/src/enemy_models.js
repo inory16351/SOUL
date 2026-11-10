@@ -1886,75 +1886,166 @@ export function createGiantDredger() { return mireDredger(true); }
 /** Snapping-turtle host. The clear crown supports Unity's three runtime poison sacs. */
 export function createShellHost() {
   const { flesh, metal } = mireMaterials();
+  // Host-only pigments: shared mire creatures retain their original palette.
+  Object.assign(PALETTE, {
+    hostChitin: [0x251b27, 0x64505b], hostPlate: [0x30212c, 0x775b62],
+    hostEdge: [0x41432d, 0x8b8d59], hostFlesh: [0x4b2c47, 0x9b647f],
+    hostHorn: [0x49422e, 0xaaa375],
+  });
+  flesh.roughness = .32;
   const root = pivot(null, 'shell-host'), body = pivot(root, 'body', [0, .5, 0]);
+  const domeY = (x, z) => .08 + .29 * Math.sqrt(Math.max(0, 1 - (x * x + z * z) / (.65 * .65)));
+  // A closed faceted scute, olive bevel around a raised purple central fold.
+  // The perimeter is corrected once; no double-sided material hides bad winding.
+  function scute(outline, lift = .018) {
+    const p = outline.map(([x, z]) => new THREE.Vector3(x, domeY(x, z), z));
+    let center = p.reduce((c, v) => c.add(v), new THREE.Vector3()).multiplyScalar(1 / p.length);
+    if (new THREE.Vector3().crossVectors(p[1].clone().sub(p[0]), p[2].clone().sub(p[0])).y < 0) p.reverse();
+    const inset = p.map(v => v.clone().lerp(center, .12).add(new THREE.Vector3(0, lift, 0)));
+    center.y = domeY(center.x, center.z) + lift;
+    const top = [], edge = [];
+    const tri = (a, b, c, dst) => dst.push(...a.toArray(), ...b.toArray(), ...c.toArray());
+    for (let i = 0; i < p.length; i++) {
+      const j = (i + 1) % p.length;
+      tri(center, inset[i], inset[j], top);
+      tri(p[i], p[j], inset[j], edge); tri(p[i], inset[j], inset[i], edge);
+      const lo = p[i].clone().add(new THREE.Vector3(0, -.014, 0));
+      const ln = p[j].clone().add(new THREE.Vector3(0, -.014, 0));
+      tri(lo, ln, p[j], top); tri(lo, p[j], p[i], top);
+      tri(center.clone().add(new THREE.Vector3(0, -.05, 0)), ln, lo, top);
+    }
+    const geometry = vertices => new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    return [geometry(top), geometry(edge)];
+  }
   const shell = [
-    [pebble([0, -.04, -.08], [.55, .20, .58], 1), 'mireFold'],
-    [new THREE.SphereGeometry(1, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2)
-      .scale(.65, .29, .64).translate(0, .09, -.07), 'mireSkin'],
-    [mireRing([0, .09, -.07], .61, .045, [Math.PI / 2, 0, 0], 16), 'mireHorn'],
+    [pebble([0, -.075, 0], [.54, .19, .55], 1), 'hostFlesh'],
+    [new THREE.SphereGeometry(1, 20, 7, 0, Math.PI * 2, 0, Math.PI / 2)
+      .scale(.65, .29, .65).translate(0, .075, 0), 'hostChitin'],
   ];
-  // All relief starts outside radius .44; central crown/sac ring radius .315
-  // remains smooth, with no barnacle, machine plate or ridge occupying the sacs.
-  for (let i = 0; i < 14; i++) {
-    const a = i * Math.PI * 2 / 14;
-    const x = Math.cos(a), z = Math.sin(a);
-    mirePath(shell, [[x * .44, .29, z * .44 - .07], [x * .54, .23, z * .53 - .07],
-      [x * .64, .11, z * .62 - .07]], .025, .045, i % 3 ? 'mireHorn' : 'mireFold', 5);
-    if (i % 2 === 0) {
-      shell.push([mireRing([x * .53, .24, z * .52 - .07], .045, .018,
-        [Math.PI / 2, 0, 0], 7), 'mireSac']);
-      shell.push([pebble([x * .53, .235, z * .52 - .07], [.027, .012, .027]), 'oil']);
+  // Five paired overlapping costal plates. Their inner margins skirt the
+  // reserved r=.315 sac crown; the underlying membrane remains unornamented.
+  for (let row = 0; row < 5; row++) for (const s of [-1, 1]) {
+    const z = -.43 + row * .215;
+    const outer = q => Math.sqrt(Math.max(0, .645 * .645 - q * q));
+    const inner = q => Math.sqrt(Math.max(.045 * .045, .35 * .35 - q * q));
+    const outline = [[s * inner(z - .10), z - .10], [s * outer(z - .10) * .94, z - .10],
+      [s * outer(z + .015), z + .015], [s * outer(z + .125) * .94, z + .125],
+      [s * inner(z + .12), z + .12], [s * inner(z + .015), z + .015]];
+    const [plateTop, bevel] = scute(outline);
+    shell.push([plateTop, row % 2 ? 'hostPlate' : 'hostChitin'], [bevel, 'hostEdge']);
+    const x = s * outer(z) * .90, y = domeY(x, z);
+    mirePath(shell, [[x, y, z], [x + s * .045, y + .065, z - .025],
+      [x + s * .06, y + .055, z - .085]], .031, .002, 'hostHorn', 5);
+    // Pink tendon lies in the overlap, not a luminous strip.
+    mirePath(shell, [[s * inner(z), domeY(inner(z), z) + .007, z],
+      [s * (inner(z) + outer(z)) * .5, domeY((inner(z) + outer(z)) * .5, z) + .005, z - .015],
+      [x, y + .006, z - .025]], .007, .004, 'hostFlesh', 4);
+  }
+  // Flaring, serrated marginal plates form the low turtle rim.
+  for (let i = 0; i < 24; i++) {
+    const a = i * Math.PI / 12, da = .13;
+    const at = (r, t) => [Math.sin(t) * r, Math.cos(t) * r];
+    const [cap, bevel] = scute([at(.565, a - da), at(.64, a - da),
+      at(.69, a + .025), at(.635, a + da), at(.565, a + da)], .009);
+    shell.push([cap, i % 3 ? 'hostChitin' : 'hostPlate'], [bevel, 'hostEdge']);
+  }
+  // Keel continues fore/aft of the clear crown: tall horns never occupy a sac.
+  for (const s of [-1, 1]) for (let i = 0; i < 2; i++) {
+    const z = s * (.40 + i * .13), y = domeY(0, z);
+    const [cap, edge] = scute([[-.055, z - .055], [.055, z - .055],
+      [.075, z + .05], [0, z + .075], [-.075, z + .05]], .027);
+    shell.push([cap, 'hostChitin'], [edge, 'hostEdge']);
+    mirePath(shell, [[0, y + .025, z], [0, y + .105, z - .015],
+      [0, y + .13, z - .06]], .042, .002, 'hostHorn', 5);
+  }
+  // Sac bases match HostUpdate's angle and radius (.8 * .42); low fleshy
+  // collars only, leaving the runtime sacs and their inflation unobstructed.
+  for (let k = 0; k < 3; k++) {
+    const a = k * Math.PI * 2 / 3 + .4, x = Math.sin(a) * .336, z = Math.cos(a) * .336;
+    shell.push([pebble([x, .326, z], [.087, .032, .087], 1), 'hostFlesh']);
+    for (let j = -1; j <= 1; j++) {
+      const t = a + j * .25;
+      mirePath(shell, [[Math.sin(t) * .35, .333, Math.cos(t) * .35],
+        [Math.sin(t) * .40, .318, Math.cos(t) * .40],
+        [Math.sin(t + .12) * .46, .284, Math.cos(t + .12) * .46]], .009, .003, 'hostFlesh', 4);
     }
   }
-  scrap(body, 'huge-ridged-dome-and-barnacle-skirt', shell, flesh);
+  // Short armoured tail, tapering down behind the skirt.
+  mirePath(shell, [[0, -.04, -.49], [.025, -.11, -.62], [.065, -.17, -.73],
+    [.10, -.18, -.78]], .10, .004, 'hostChitin', 6);
+  for (let i = 0; i < 3; i++) shell.push([pebble([i * .027, -.035 - i * .045, -.55 - i * .067],
+    [.075 - i * .016, .042, .07]), 'hostEdge']);
+  scrap(body, 'layered-chitin-carapace-serrated-skirt-and-keel', shell, flesh);
   const wreck = [];
-  for (let i = 0; i < 4; i++) {
-    const a = .7 + i * 1.55, x = Math.cos(a) * .51, z = Math.sin(a) * .50 - .07;
-    wreck.push([mireSheet([x, .24, z], .17, .23, [-Math.PI / 2, a, .25]), i % 2 ? 'mireRust' : 'iron']);
-    wreck.push([pebble([x, .27, z], [.022, .018, .022]), 'mireRust']);
+  for (const s of [-1, 1]) {
+    const x = s * .49, z = s * .18;
+    wreck.push([mireSheet([x, .23, z], .12, .17, [-Math.PI / 2, s * .5, s * .48]), 'mireRust']);
+    for (const dz of [-.048, .048]) wreck.push([pebble([x, .251, z + dz], [.013, .011, .013]), 'iron']);
+    mirePath(wreck, [[x - s * .05, .23, z - .07], [x, .26, z],
+      [x + s * .03, .21, z + .08]], .018, .01, 'hostFlesh', 5);
   }
-  scrap(body, 'half-swallowed-riveted-shell-plates', wreck, metal);
-  const core = glow(body, 'violet-flank-gland', [-.48, .055, .19], [.035, .045, .07], [1.2, .3, 1.7]);
-  const head = pivot(body, 'head', [0, .14, .50]);
-  scrap(head, 'thick-neck-and-snapping-beak', [
-    [pebble([0, -.09, -.16], [.23, .18, .27], 1), 'mireFold'],
-    [pebble([0, -.015, .015], [.19, .14, .16], 1), 'mireSkin'],
-    [plate([[-.16, .045], [.13, .06], [.14, -.05], [.055, -.085],
-      [0, -.15], [-.05, -.075], [-.14, -.06]], .09, .13), 'mireHorn'],
-    [mireSheet([-.12, .06, -.03], .14, .16, [-.5, -.4, .2]), 'mireRust'],
-  ], flesh);
-  const eye = glow(head, 'violet-eye', [-.12, .06, .105], [.047, .035, .025], [1.6, .4, 2.4]);
-  const throat = glow(head, 'throat', [0, -.145, -.035], [.047, .043, .025], [1.6, .4, 2.4]);
+  scrap(body, 'two-swallowed-riveted-plates', wreck, metal);
+  const core = glow(body, 'violet-flank-gland', [-.49, -.015, .18], [.028, .032, .052], [1.2, .3, 1.7]);
+  const head = pivot(body, 'head', [0, .06, .49]);
+  const skull = [
+    [pebble([0, -.06, -.10], [.18, .13, .24], 1), 'hostFlesh'],
+    [pebble([0, -.025, .085], [.16, .115, .18], 1), 'hostChitin'],
+    [pebble([0, .045, .10], [.145, .055, .15]), 'hostPlate'],
+  ];
+  for (let i = 0; i < 4; i++) skull.push([
+    mireRing([0, -.06, -.20 + i * .055], .128 - i * .004, .013, [0, 0, i * .12], 8), 'hostFlesh']);
+  mirePath(skull, [[0, .035, .16], [0, -.005, .255], [0, -.10, .27]],
+    .074, .006, 'hostHorn', 6);
+  for (const s of [-1, 1]) {
+    skull.push([pebble([s * .13, .025, .13], [.043, .038, .06]), 'hostEdge']);
+    skull.push([pebble([s * .141, .015, .165], [.024, .021, .028]), 'oil']);
+    mirePath(skull, [[s * .13, -.06, .065], [s * .21, -.085, .14],
+      [s * .20, -.10, .255], [s * .11, -.09, .29]], .047, .003, 'hostHorn', 5);
+  }
+  scrap(head, 'wrinkled-neck-armoured-skull-hooked-beak-and-mandibles', skull, flesh);
+  const eye = glow(head, 'violet-eye', [-.145, .023, .18], [.027, .019, .022], [1.6, .4, 2.4]);
+  const throat = glow(head, 'throat', [0, -.15, .025], [.047, .043, .025], [1.6, .4, 2.4]);
   throat.visible = false;
-  const jaw = pivot(head, 'jaw', [0, -.085, .035]);
-  scrap(jaw, 'heavy-hooked-lower-beak', [
-    [pebble([0, -.055, .035], [.15, .075, .125]), 'mireFold'],
-    [rod([0, -.06, .12], [0, .015, .17], .07, .008, 5), 'mireHorn'],
-  ], flesh);
+  const jaw = pivot(head, 'jaw', [0, -.09, .07]);
+  const bite = [[pebble([0, -.045, .06], [.13, .055, .13]), 'hostFlesh']];
+  mirePath(bite, [[0, -.065, .04], [0, -.055, .17], [0, -.005, .19]], .065, .004, 'hostHorn', 6);
+  scrap(jaw, 'heavy-lower-turtle-beak', bite, flesh);
   const legs = [];
   for (const [side, index] of [[-1, 0], [1, 0], [1, 1], [-1, 1]]) {
-    const front = index === 0;
-    const hip = pivot(body, 'hip-' + side + '-' + index, [side * .17, -.01, front ? .30 : -.35]);
-    const ko = [side * .01, front ? -.17 : -.16, front ? -.06 : .09];
-    const ao = [0, front ? -.21 : -.17, front ? .03 : -.13];
+    const front = index === 0, dir = front ? 1 : -1;
+    const hip = pivot(body, 'hip-' + side + '-' + index, [side * .46, -.07, front ? .25 : -.29]);
+    const ko = [side * .20, -.10, dir * .07], ao = [side * .025, -.25, dir * .035];
     const knee = pivot(hip, 'knee-' + side + '-' + index, ko);
     const ankle = pivot(knee, 'ankle-' + side + '-' + index, ao);
-    scrap(hip, 'columnar-turtle-shoulder', [
-      [rod([0, 0, 0], ko, .15, .13, 7), 'mireFold'],
-      [pebble([side * .09, -.05, 0], [.16, .12, .14]), 'mireSkin'],
-    ], flesh);
-    scrap(knee, 'short-scaled-shin', [
-      [rod([0, 0, 0], ao, .13, .10, 7), 'mireSkin'],
-      [mireSheet([side * .09, -.06, .04], .14, .15, [0, side * .8, 0]), 'mireRust'],
-    ], flesh);
-    const floor = front ? -.11 : -.16;
-    const foot = [[pebble([side * .035, floor + .06, .035], [.14, .06, .15], 1), 'mireFold']];
-    for (let i = -1; i <= 1; i++) foot.push([rod([i * .065, floor + .05, .12],
-      [i * .075, floor + .016, .22 - Math.abs(i) * .025], .034, .003, 5), 'mireHorn']);
-    scrap(ankle, 'broad-clawed-turtle-foot', foot, flesh);
+    const upper = [
+      [pebble([0, 0, 0], [.095, .085, .10]), 'hostFlesh'],
+      [rod([side * .025, -.005, 0], [side * .17, -.075, dir * .06], .095, .07, 7), 'hostChitin'],
+      [pebble([side * .105, .005, dir * .03], [.125, .065, .10]), 'hostPlate'],
+      [pebble(ko, [.075, .065, .075]), 'hostFlesh'],
+    ];
+    mirePath(upper, [[side * .09, .035, dir * .015], [side * .17, .07, dir * .015],
+      [side * .21, .055, -dir * .035]], .026, .002, 'hostHorn', 5);
+    scrap(hip, 'sideways-armoured-upper-leg', upper, flesh);
+    const shin = [
+      [rod([0, -.035, 0], ao, .067, .052, 7), 'hostFlesh'],
+      [rod([side * .015, -.045, 0], [side * .033, -.19, dir * .028], .077, .06, 6), 'hostChitin'],
+    ];
+    for (let i = 0; i < 3; i++) shin.push([pebble([side * .03, -.07 - i * .055, dir * (.01 + i * .01)],
+      [.067 - i * .006, .035, .075]), i % 2 ? 'hostEdge' : 'hostPlate']);
+    scrap(knee, 'bent-scaled-shin-and-soft-joint', shin, flesh);
+    // Ankle world y=.08; the broad paw's sole is y=0 at rest.
+    const foot = [[new THREE.SphereGeometry(1, 8, 4).scale(.105, .055, .115)
+      .translate(side * .025, -.025, dir * .025), 'hostFlesh'],
+    [pebble([side * .025, .006, dir * .025], [.095, .037, .10]), 'hostChitin']];
+    for (let i = -1; i <= 1; i++) {
+      const x = side * .025 + i * .055;
+      mirePath(foot, [[x, -.015, dir * .09], [x + side * .025, -.015, dir * (.16 - Math.abs(i) * .015)],
+        [x + side * .035, -.075, dir * (.19 - Math.abs(i) * .015)]], .024, .002, 'hostHorn', 5);
+    }
+    scrap(ankle, 'broad-turtle-paw-three-hooked-claws', foot, flesh);
     legs.push({ hip, knee, ankle, side, index });
   }
-  return { root, radius: .75, height: .9, parts: { body, head, jaw, eye, core, legs, throat } };
+  return { root, radius: .8, height: .9, parts: { body, head, jaw, eye, core, legs, throat } };
 }
 
 /** Ancient mother: split vertical maw, eggs and machinery swallowed into living folds. */
