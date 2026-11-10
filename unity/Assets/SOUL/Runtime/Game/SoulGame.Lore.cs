@@ -81,7 +81,7 @@ namespace Soul
 
         void PlayRecord(RecordProp rp)
         {
-            var r = rp.rec; r.collected = true;
+            var r = rp.rec; r.collected = true; PartsRecordCheck(r.zone);   // 생존자 기록 보상
             var person = Lore.Person(r.who);
             Subtitles(person.name, r.lines, person.tint, person.build, person.height); subProp = rp;
             SoulAudio.Play("ropeReel", Sim.FromUnity(rp.root.transform.position), .35f, .4f, .1f);

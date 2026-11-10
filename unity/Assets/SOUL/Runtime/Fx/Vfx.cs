@@ -26,7 +26,7 @@ namespace Soul
 
         class Particle { public GameObject go; public Transform t; public MeshRenderer r; public Vector3 pos, vel; public Color color; public float life, max, width, size; public bool spark; }
         class FlashFx { public GameObject go; public Transform t; public MeshRenderer r; public Vector3 pos; public float life, max, size; }
-        class RingFx { public GameObject go; public Transform t; public MeshRenderer r, behind; public float life, power; public bool upright; }
+        class RingFx { public GameObject go; public Transform t; public MeshRenderer r, behind; public float life, power; public bool upright; public Color color = new Color(1.8f, 2.2f, 2.6f); }
         class Ghost { public GameObject go; public Material mat; public float life, max, start; }
         struct Sample { public Vector3 b, tip; public float time; }
 
@@ -166,6 +166,38 @@ namespace Soul
             Tint(r, new Color(1.8f, 2.2f, 2.6f), 1);
             rings.Add(new RingFx { go = go, t = go.transform, r = r, power = power, upright = upright });
         }
+        // ---------- tinted effects for the slot parts (2026-11-10): element colours (HDR, bloom) ----------
+        /// sparks of one colour flying out of a point
+        public void Sparks(Vector3 pos, int count, float power, Color c)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                var dir = new Vector3(R * 2 - 1, R * .9f + .2f, R * 2 - 1).normalized;
+                AddSpark(pos, dir * ((2f + R * 4.5f) * power), i % 4 == 0 ? Color.Lerp(c, new Color(3, 3, 3), .5f) : c, .18f + R * .26f, .008f + R * .01f);
+            }
+        }
+        /// a soft additive glow puff (clouds, fields, auras); drifts by vel, grows and fades over life
+        public void Puff(Vector3 pos, Color c, float size, float life = .9f, Vector3 vel = default)
+        {
+            var go = Obj("puff", quad, flashMat, out var r);
+            go.transform.position = Sim.ToUnity(pos); go.transform.rotation = Billboard; go.transform.localScale = Vector3.one * size;
+            Tint(r, c, 1);
+            particles.Add(new Particle { go = go, t = go.transform, r = r, pos = pos, vel = vel, color = c, max = life, size = size });
+        }
+        /// a flat ring on the floor at pos.y (not pinned to y = 0 like Ring)
+        public void FloorRing(Vector3 pos, float power, Color c)
+        {
+            var go = Obj("ring", ringQuad, ringMat, out var r);
+            go.transform.SetPositionAndRotation(Sim.ToUnity(pos + new Vector3(0, .05f, 0)), Sim.ToUnity(Sim.EulerXYZ(-Mathf.PI / 2, 0, 0)));
+            go.transform.localScale = Vector3.one * .3f; Tint(r, c, 1);
+            rings.Add(new RingFx { go = go, t = go.transform, r = r, power = power, color = c });
+        }
+        /// a short coloured streak from a to b (bolts, chains, threads)
+        public void Streak(Vector3 a, Vector3 b, Color c, int n = 8)
+        {
+            for (int i = 0; i <= n; i++) { var p = Vector3.Lerp(a, b, i / (float)n) + new Vector3(R - .5f, R - .5f, R - .5f) * .12f; AddSpark(p, new Vector3(R - .5f, R, R - .5f), c, .12f + R * .1f, .012f); }
+        }
+
         // Travelling laser crescent (W). The returned object is used by the game loop for hit tests.
         public Wave SpawnWave(Vector3 origin, Vector3 dir, float roll = -.35f)
         {
@@ -278,7 +310,7 @@ namespace Soul
                 var r = rings[i]; r.life += dt; float t = r.life / (r.upright ? .26f : .45f);
                 if (t >= 1) { Object.Destroy(r.go); rings.RemoveAt(i); continue; }
                 r.t.localScale = Vector3.one * (.3f + (r.upright ? 1.6f : 4.2f) * Mathf.Sqrt(t) * r.power);
-                Tint(r.r, new Color(1.8f, 2.2f, 2.6f), (1 - t) * (1 - t));
+                Tint(r.r, r.color, (1 - t) * (1 - t));
                 if (r.behind) Tint(r.behind, new Color(1.8f, 2.2f, 2.6f), .7f * (1 - t) * (1 - t));
             }
             for (int i = waves.Count - 1; i >= 0; i--)

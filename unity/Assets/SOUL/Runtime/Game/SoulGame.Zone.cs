@@ -7,7 +7,7 @@ namespace Soul
     // the boss arena fight (fog gate, boss HP bar, reward part) and purification (되살아나는 세계:
     // the zone's look flips, grass + flowers, pollen instead of ash, butterflies and birds, one more face).
     // Debug: G rest at a pod · K toggle purification of the zone you stand in · M map (click a found pod = travel,
-    // Shift+click = teleport anywhere).
+    // Ctrl+click = teleport anywhere).
     public partial class SoulGame
     {
         Fauna fauna; Pod restPod; Material zoneLit, zoneGlow, fogMat;
@@ -159,10 +159,11 @@ namespace Soul
         }
         void RestAtPod()
         {
+            if (GateInteract()) return;   // 스킬 게이트 (SoulGame.PartsWorld)
             if (NearMerchant() && fightArena == null) { OpenShop(); return; }   // 숨은 상인 (SoulGame.Field)
             var sh = NearShrine(5); if (sh != null && player.alive && fightArena == null) { Resonate(sh); return; }
             var pod = NearPod(4.2f); if (pod == null || !player.alive || fightArena != null) return;
-            pod.found = true; restPod = pod; player.hp = player.max;
+            pod.found = true; restPod = pod; player.hp = player.max; PartsRest();
             // (2026-11-10) field monsters no longer come back on rest: they respawn on a timer (SoulGame.Ecology RespawnDue)
             vfx.Ring(Sim.FlatY(pod.pos, .5f), 1.6f, true); vfx.Flash(Sim.FlatY(pod.pos, 1.4f), 1);
             Cue($"충전 완료 · {pod.name} 에 저장됨", 2);
@@ -219,7 +220,8 @@ namespace Soul
         void MapClick(Rect r, Vector2 mp)
         {
             if (PinHovered(r, mp)) { mapPin = null; return; }   // left-click on the hovered pin removes it too
-            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            // debug teleport modifier: Ctrl (Shift is the WASD dash key now; it still works for the click scheme)
+            bool shift = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl) || Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             foreach (var pod in ZoneAreas.Pods)
             {
                 if (!pod.found) continue;
@@ -309,7 +311,7 @@ namespace Soul
             }
             GUI.color = Color.white;
             GUI.Label(new Rect(22, 64, 420, 20), $"기본 부품 {scrap}   ·   경험치 {Growth.xp} (포인트 {Growth.Points})   ·   수리 키트 {kits} (X)", small);
-            if (debugHud) GUI.Label(new Rect(20, 122, 520, 20), $"표정 {ZoneState.Count}/{PixelFace.ORDER.Length}   ·   K 정화 토글   ·   Shift+클릭 지도 순간이동", small);
+            if (debugHud) GUI.Label(new Rect(20, 122, 520, 20), $"표정 {ZoneState.Count}/{PixelFace.ORDER.Length}   ·   K 정화 토글   ·   Ctrl+클릭 지도 순간이동", small);
         }
     }
 }

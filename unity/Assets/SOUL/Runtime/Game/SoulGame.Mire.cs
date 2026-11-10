@@ -47,7 +47,7 @@ namespace Soul
             if (mireBall == null) mireBall = MireModels.SludgeBall();
             var prevImpact = enemies.onImpact;
             enemies.onImpact = (e, a, p) => { prevImpact?.Invoke(e, a, p); MireImpact(e, a, p); };
-            enemies.onAggro += e => { if (Skills.IsOn("toxic") && e.alive) e.poisonUntil = realTime + 3; };   // 독에 잠식된 코어
+            // 독에 잠식된 코어: poison is applied per hit by the parts pipeline (SoulGame.PartsPassive OnHitDealt)
         }
 
         void MireUpdate(float dt)

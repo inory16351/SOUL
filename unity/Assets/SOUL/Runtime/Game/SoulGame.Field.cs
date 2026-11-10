@@ -19,14 +19,23 @@ namespace Soul
     public partial class SoulGame
     {
         public int kits;
-        const float RARE_SKILL_DROP = .006f;   // normal mob -> slot-skill part (user 2026-11-10: very rare)
-        string RandomUnownedSkill()
+        // 종별 드롭 (카탈로그 7-4, 2026-11-10): each normal species carries ONE part of its own body, 0.5 % per kill, fixed
+        // (no bad-luck protection), only while it is not owned. Types not in the game yet are listed under their planned keys.
+        public const float SPECIES_DROP = .005f;
+        public static readonly Dictionary<string, string> SpeciesPart = new Dictionary<string, string>
         {
-            var pool = new List<string>(); foreach (var d in Skills.Defs) if (!d.grudge && !Skills.Has(d.id)) pool.Add(d.id);
-            return pool.Count == 0 ? null : pool[Random.Range(0, pool.Count)];
-        }
+            { "crawler", "lightframe" },     // Z0 스크랩 하운드 -> 가벼운 프레임
+            { "sentry", "aimlens" },         // Z0 녹슨 파수꾼 -> 조준 렌즈
+            { "shockDrone", "decoder" },     // Z1 감전 드론 (자리표시) -> 신호 해독기
+            { "glassBat", "glidecloth" },    // Z2 유리 박쥐 -> 날개막 천
+            { "scrapDigger", "vibroblade" }, // Z3 고철 굴착기 -> 진동 칼날
+            { "assemblyDrone", "sparkplug" },// Z4 조립 드론 (자리표시) -> 점화 플러그
+            { "fly", "compound" },           // Z5 숲 날벌레 -> 겹눈 렌즈
+            { "thornVine", "thornshell" },   // Z5 가시 덩굴 (자리표시) -> 가시 껍질
+            { "swarmBug", "swarmnest" },     // Z6 떼벌레 -> 떼벌레 둥지
+        };
         bool perkPlating, perkBlade, perkCoil;
-        const int KIT_MAX = 3; const float KIT_HEAL = .45f;
+        int KIT_MAX => 3 + kitMaxBonus; const float KIT_HEAL = .45f;   // 은닉처 rewards raise the max (SoulGame.PartsWorld)
         float kitReady;
         // locked caches
         class Depot { public Territory t; public Vector3 pos; public GameObject go; public Material lockMat; public bool open; }
@@ -37,7 +46,7 @@ namespace Soul
         readonly Dictionary<Territory, GameObject> burrowGo = new Dictionary<Territory, GameObject>();
         readonly HashSet<Territory> burrowPaid = new HashSet<Territory>();
         // merchant
-        Vector3? merchantPos; GameObject merchantGo; bool shopOpen, shopPausedBefore; string shopNote = "";
+        Vector3? merchantPos; GameObject merchantGo, merchantGo6; bool shopOpen, shopPausedBefore; string shopNote = ""; int shopZone;
         bool fieldHooked;
 
         void FieldHooks()
@@ -55,8 +64,8 @@ namespace Soul
             // 2026-11-10: the 붉은 조각 currency is gone; what used to drop as shards drops as extra basic parts (5 each)
             int shard = e.def.eliteName != null ? 5 : e.special ? 2 : e.type == "sentry" ? 1 : Random.value < .1f ? 1 : 0;
             if (shard > 0) pickups.Burst(e.Center(), shard, 5);
-            // a very rare slot-skill part from a normal mob (an unowned slot skill)
-            if (e.def.eliteName == null && e.def.bossName == null && Random.value < RARE_SKILL_DROP) { var id = RandomUnownedSkill(); if (id != null) SpawnDrop("skill:" + id, e.pos); }
+            // 종별 드롭: the species' own part, 0.5 %, only while unowned
+            if (e.def.eliteName == null && e.def.bossName == null && SpeciesPart.TryGetValue(e.type, out var sp) && !Skills.Has(sp) && Random.value < SPECIES_DROP) SpawnDrop("skill:" + sp, e.pos);
             if (e.special) pickups.Burst(e.Center(), 5, 5);
         }
 
@@ -134,7 +143,10 @@ namespace Soul
             }
             merchantPos = at; return at;
         }
-        bool NearMerchant() => player.alive && Sim.FlatY(MerchantPos() - ch.root.position).magnitude < 3.5f;
+        /// Z6 떠다니는 배 상인: beside the 흡입 gate (잔해에 막힌 뱃길), there once that gate is open
+        Vector3 Merchant6Pos() { var g = gates.Find(x => x.id == "z6_merchant"); return g != null ? g.pos + new Vector3(2.5f, 0, 2.5f) : Vector3.one * 1e6f; }
+        int MerchantNear() { if (!player.alive) return -1; if (Sim.FlatY(MerchantPos() - ch.root.position).magnitude < 3.5f) return 0; if (revealedMerchants.Contains(6) && Sim.FlatY(Merchant6Pos() - ch.root.position).magnitude < 3.5f) return 6; return -1; }
+        bool NearMerchant() => MerchantNear() >= 0;
         void MerchantStream(Vector3 p)
         {
             var at = MerchantPos(); bool near = Sim.FlatY(at - p).magnitude < 110;
@@ -147,17 +159,35 @@ namespace Soul
                 lamp.AddComponent<MeshFilter>().sharedMesh = FieldPropModels.MerchantLantern(); lamp.AddComponent<MeshRenderer>().sharedMaterial = Mats.Unlit(new Color(2.4f, 1.6f, .6f, 1), Blend.Opaque);
             }
             else if (!near && merchantGo != null) { Object.Destroy(merchantGo); merchantGo = null; }
+            bool near6 = revealedMerchants.Contains(6) && Sim.FlatY(Merchant6Pos() - p).magnitude < 120;
+            if (near6 && merchantGo6 == null)
+            {
+                merchantGo6 = new GameObject("boat merchant"); merchantGo6.transform.SetParent(scene.actors, false);
+                merchantGo6.transform.localPosition = Sim.ToUnity(Merchant6Pos()); merchantGo6.transform.localRotation = Sim.YawToUnity(-.6f);
+                merchantGo6.AddComponent<MeshFilter>().sharedMesh = FieldPropModels.Merchant(); merchantGo6.AddComponent<MeshRenderer>().sharedMaterial = Mats.Lit(Color.white, Color.black, .15f, .2f, true);
+            }
+            else if (!near6 && merchantGo6 != null) { Object.Destroy(merchantGo6); merchantGo6 = null; }
         }
         struct Ware { public string id, name, desc; public int price; }
-        static readonly Ware[] Wares =
+        /// 존별 상인 상품 (카탈로그 10절): a repair kit + the zone's slot parts (bought once). Z1 ~ Z5, Z7 merchants come with their zones.
+        static readonly Dictionary<int, (string id, int price)[]> ZoneWares = new Dictionary<int, (string, int)[]>
         {
-            new Ware { id = "kit",     name = "수리 키트",   desc = "X: 최대 체력 45% 즉시 수리 (최대 3개)", price = 30 },
-            new Ware { id = "plating", name = "덧댄 장갑판", desc = "최대 체력 +20",                     price = 80 },
-            new Ware { id = "blade",   name = "벼린 칼날",   desc = "주는 피해 +10%",                    price = 80 },
-            new Ware { id = "coil",    name = "냉각 코일",   desc = "대쉬 쿨다운 -15%",                  price = 80 },
+            { 0, new[] { ("riposte", 80), ("hazard", 80), ("plate", 70) } }, { 1, new[] { ("harpoon", 90), ("wirespool", 80) } },
+            { 2, new[] { ("chainblade", 200), ("dropcalc", 180) } }, { 3, new[] { ("piston", 90), ("rustblade", 80) } },
+            { 4, new[] { ("shockpalm", 200), ("battery", 220) } }, { 5, new[] { ("thornwhip", 90), ("tailreflex", 80) } },
+            { 6, new[] { ("damper", 180), ("stinger", 200) } }, { 7, new[] { ("glassblade", 350), ("weakspot", 320), ("combatcalc", 380) } },
         };
-        bool Owned(string id) => id == "plating" ? perkPlating : id == "blade" ? perkBlade : id == "coil" && perkCoil;
-        void OpenShop() { shopOpen = true; shopPausedBefore = paused; paused = true; moveTarget = null; shopNote = "…어서 와. 쓸 만한 부품이면 무엇이든 고쳐 주지."; }
+        Ware[] Wares
+        {
+            get
+            {
+                var l = new List<Ware> { new Ware { id = "kit", name = "수리 키트", desc = $"X: 최대 체력 45% 즉시 수리 (최대 {KIT_MAX}개)", price = 30 } };
+                if (ZoneWares.TryGetValue(shopZone, out var ws)) foreach (var (id, price) in ws) { var d = Skills.Def(id); if (d != null) l.Add(new Ware { id = id, name = d.name, desc = $"{Skills.SlotNames[(int)d.slot]} · {(d.passive ? "패시브" : "액티브")} · {Skills.GradeNames[d.grade]} · {d.desc}", price = price }); }
+                return l.ToArray();
+            }
+        }
+        bool Owned(string id) => id == "plating" ? perkPlating : id == "blade" ? perkBlade : id == "coil" ? perkCoil : id != "kit" && Skills.Has(id);
+        void OpenShop() { shopZone = Mathf.Max(0, MerchantNear()); shopOpen = true; shopPausedBefore = paused; paused = true; moveTarget = null; shopNote = "…어서 와. 쓸 만한 부품이면 무엇이든 고쳐 주지."; }
         void CloseShop() { shopOpen = false; paused = shopPausedBefore; }
         /// eats input while the shop is open (G / Esc close it)
         bool ShopInput()
@@ -168,13 +198,14 @@ namespace Soul
         }
         public string Buy(string id)
         {
-            var w = System.Array.Find(Wares, x => x.id == id);
+            var all = Wares; var w = System.Array.Find(all, x => x.id == id);
             if (w.id == null) return "없는 물건";
             if (id == "kit" && kits >= KIT_MAX) return shopNote = "더는 못 들고 다녀.";
             if (id != "kit" && Owned(id)) return shopNote = "이미 달았잖아.";
             if (scrap < w.price) return shopNote = "부품이 모자라.";
             scrap -= w.price;
             if (id == "kit") kits++; else if (id == "plating") perkPlating = true; else if (id == "blade") perkBlade = true; else if (id == "coil") perkCoil = true;
+            else After(.3f, () => GrantSkill(id));   // a slot part
             SoulAudio.Play("pickup", ch.root.position); return shopNote = $"{w.name}. 잘 쓰렴.";
         }
         void ShopGUI(float W, float H)
@@ -184,12 +215,13 @@ namespace Soul
             GUI.color = new Color(0, 0, 0, .6f); GUI.DrawTexture(new Rect(0, 0, W, H), white);
             float w = Mathf.Min(560, W - 40), h = 400, x = (W - w) / 2, y = (H - h) / 2;
             GUI.color = new Color(.05f, .06f, .07f, .95f); GUI.DrawTexture(new Rect(x, y, w, h), white);
-            GUI.color = new Color(1, .85f, .55f); GUI.Label(new Rect(x + 20, y + 14, w - 40, 26), "숨은 상인", new GUIStyle(small) { fontSize = 19, fontStyle = FontStyle.Bold });
+            GUI.color = new Color(1, .85f, .55f); GUI.Label(new Rect(x + 20, y + 14, w - 40, 26), shopZone == 6 ? "떠다니는 배 상인" : "고물 수집가", new GUIStyle(small) { fontSize = 19, fontStyle = FontStyle.Bold });
             GUI.color = new Color(.85f, .85f, .8f); GUI.Label(new Rect(x + 20, y + 44, w - 40, 22), shopNote, new GUIStyle(small) { fontSize = 13, wordWrap = true });
             GUI.color = new Color(1, .45f, .4f); GUI.Label(new Rect(x + w - 220, y + 16, 200, 22), $"기본 부품 {scrap}   ·   수리 키트 {kits}/{KIT_MAX}", new GUIStyle(small) { fontSize = 13, alignment = TextAnchor.MiddleRight });
-            for (int i = 0; i < Wares.Length; i++)
+            var wares = Wares;
+            for (int i = 0; i < wares.Length; i++)
             {
-                var it = Wares[i]; var row = new Rect(x + 20, y + 84 + i * 66, w - 40, 58);
+                var it = wares[i]; var row = new Rect(x + 20, y + 84 + i * 66, w - 40, 58);
                 bool owned = it.id != "kit" && Owned(it.id), hov = row.Contains(ev.mousePosition);
                 GUI.color = new Color(1, 1, 1, hov ? .1f : .05f); GUI.DrawTexture(row, white);
                 GUI.color = owned ? new Color(.5f, .55f, .6f) : Color.white; GUI.Label(new Rect(row.x + 12, row.y + 6, 260, 22), it.name, new GUIStyle(small) { fontSize = 15, fontStyle = FontStyle.Bold });
@@ -216,12 +248,12 @@ namespace Soul
         {
             if (!fieldHooked) FieldHooks();
             var p = ch.root.position;
-            DepotsUpdate(p); MerchantStream(p);
+            DepotsUpdate(p); MerchantStream(p); PartsWorldUpdate(dt);
         }
         void FieldGUI(float W, float H)
         {
             if (NearMerchant() && !shopOpen) { GUI.color = new Color(1, .85f, .55f); GUI.Label(new Rect(0, H * .62f, W, 24), $"{KeyBinds.Name(KeyBinds.Act.Rest)}  거래 · 숨은 상인", new GUIStyle(big) { fontSize = 17 }); GUI.color = Color.white; }
-            ShopGUI(W, H);
+            ShopGUI(W, H); PartsWorldGUI(W, H);
         }
 
         /// MCP tests

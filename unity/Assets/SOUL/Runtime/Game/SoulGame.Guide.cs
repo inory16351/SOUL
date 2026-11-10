@@ -58,10 +58,12 @@ namespace Soul
             // ---- A: explore camera ----
             var vel = Sim.FlatY(p - lastGuidePos) / Mathf.Max(dt, 1e-4f); lastGuidePos = p;
             bool walking = vel.magnitude > .8f && vel.magnitude < 12 && !anim.busy;
-            if (walking) leadDir = Vector3.Lerp(leadDir, vel.normalized, 1 - Mathf.Exp(-dt * 2.5f));
+            // WASD (direct control): a shorter, snappier lead; click-move keeps the slow 5.5 m look-ahead
+            bool direct = KeyBinds.Wasd; cam.leadRate = direct ? 6 : 1.6f; cam.targetRate = direct ? 14 : 8; cam.posRate = direct ? 12 : 7;
+            if (walking) leadDir = Vector3.Lerp(leadDir, vel.normalized, 1 - Mathf.Exp(-dt * (direct ? 7 : 2.5f)));
             float goal = calm && walking ? 1 : calm ? exploreAmt * Mathf.Exp(-dt * .8f) : 0;
             exploreAmt = Mathf.MoveTowards(exploreAmt, goal, dt * (calm ? .9f : 2.5f));
-            cam.explore = exploreAmt; cam.exploreLead = leadDir * 5.5f;
+            cam.explore = exploreAmt; cam.exploreLead = leadDir * (direct ? 2.5f : 5.5f);
             // ---- F: pin reached ----
             if (mapPin.HasValue && (mapPin.Value - new Vector2(p.x, p.z)).magnitude < 8) { mapPin = null; SoulAudio.Play("pickup", p); }
             // ---- D: the boss's pull ----

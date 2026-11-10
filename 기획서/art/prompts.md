@@ -28,3 +28,21 @@
 | 파일 | 슬라이드 | 요지 |
 |---|---|---|
 | `boss_scrapbeast.png` | Z0 보스 기획서 표지 · 02 외형 | 같은 대화에서 생성. 탑뷰 55° 원형 콘크리트 투기장, 개과 머리 · 도마뱀 몸 · 사슬 꼬리 · 등 위로 아치를 그린 거대 팔과 3손가락 집게, 가슴의 파란 코어, 파랗게 빛나는 기둥, 크기 비교용 작은 후드 로봇. 다리 수(그림은 4개처럼 보임)와 기둥 수는 기획과 다름 |
+
+## 성장 · 스킬 시스템 기획서 (2026-11-10)
+
+같은 대화("Generate Game Key Art", 크롬에서 시작 → 앱 내장 브라우저에서 이어서 저장)에서 순서대로 생성했습니다. 결과는 1672×941 PNG입니다. 빌더: `build_growth_skill_ppt.js`.
+
+| 파일 | 슬라이드 | 요지 |
+|---|---|---|
+| `growth_cover.png` | 표지 | 무너진 건물 안 충전 포드 옆에 앉은 후드 로봇. 작업대에 센서 머리 · 코어 배터리 · 칼날 부품 · 집게 팔 · 피스톤 다리 · 보라색 독 껍질 조각 · 이끼 낀 뼈 가시. 포드 위 다섯 부위 소켓 홀로그램 |
+| `ui_slots.png` | 22 UI · 부위 장착 화면 | 가운데 로봇 정면, 부위마다 색 다른 칸 줄(채움 · 빈 칸 · 자물쇠), 몸통 옆 붉은 육각 소켓, 오른쪽 스킬 카드 목록(레벨 점), 위쪽 액티브 6칸 + 붉은 1칸. 그림은 칸이 4개인 줄이 있음(기획은 최대 3) |
+| `ui_modules.png` | 23 UI · 모듈 화면 | 펌웨어 설치 느낌의 모듈 목록 6장(로프 팔 · 제트 · 캐논 · 자석 부츠 · 필터 코어 · 스프링 무릎), 설치 진행 막대, 로프 팔 홀로그램 상세 |
+| `merchant.png` | 20 상인 | 폐허 속 숨어 사는 온화한 고물 상인 로봇과 진열된 부품 2 ~ 3개 |
+
+프롬프트 요지 (공통 스타일 문구는 위와 같음)
+- `growth_cover.png`: "inside a half-collapsed concrete building, a small hooded robot … sits beside a glowing cyan charging pod. Around it on a workbench and floor lie salvaged body parts it is choosing between … Five glowing sockets on a simple diagram hologram above the pod (head, core, right arm, left arm, legs)."
+- `ui_slots.png`: "A game UI screen mockup: the robot's 'part slot loadout' screen … Five body parts highlighted with colored callout lines … a row of up to three square slot sockets … one small red glowing hexagon socket … an action bar of six square key slots plus one separate red slot."
+- `ui_modules.png`: "A 'module upgrades' screen that feels like installing firmware/software into the robot … six installed module cards … One card … still installing with a cyan progress bar … detail view of the selected module (the rope arm) as a holographic wireframe."
+- `merchant.png`: 아래 상인 프롬프트 참고.
+- 상인 프롬프트(`merchant.png`): "A gentle hidden machine merchant in the ruins: inside a dim collapsed underground storage room lit by a warm hanging lamp, an old round-bodied junk-collector robot with a big kind single lens eye … a tiny potted green sprout on its head, sits behind a crate counter. On the counter … only three salvaged parts for sale … a padded mechanical glove, a small sensor lens visor, and a thick armor chest plate (= Z0 상인 상품) … The small hooded robot … stands in front."

@@ -19,7 +19,7 @@ namespace Soul
         static Dictionary<string, (float r, float a)> areaBase; static Dictionary<KeyCode, float> cdBase;
 
         /// basic parts came in (pickup, pod cleanse reward): the wallet only (2026-11-10: xp comes from kills, GainXp)
-        public void GainScrap(int n) { if (n <= 0) return; scrap += n; }
+        public void GainScrap(int n) { if (n <= 0) return; scrap += n; PartsScrapPicked(n); }
         /// a kill (SoulGame onKill) gave xp: a new point is announced once
         public void GainXp(int n)
         {
@@ -67,7 +67,7 @@ namespace Soul
         public float CounterWindowEnd => .27f + CounterWindowBonus;
         public bool SkillUpgrade(string id) { var o = Skills.Get(id); bool ok = Skills.LevelUp(o, ref scrap); return ok; }
 
-        float CounterWindowBonus => Growth.CounterWindow + Skills.Perk("counter", Skills.PerkKind.Window);
+        float CounterWindowBonus => Growth.CounterWindow + (Skills.Get("counter") is var co && co != null && co.Lv3 ? .05f : 0) + (realTime < counterWindowBoostUntil || realTime < counterChainUntil ? .27f : 0);
         float RopeRange => RopeAnchors.RANGE * Growth.RopeRangeScale;
 
         // ---------- effects ----------
@@ -161,6 +161,18 @@ namespace Soul
             float k = r.width / 232f;   // the open row is 8 px taller (glow below): keep the ring where the others are
             var dst = new Rect(r.x, r.y, src.width * k, src.height * k);
             GUI.DrawTextureWithTexCoords(dst, gNodes, UVof(SZ_NODES, src.x, src.y, src.width, src.height), true); return true;
+        }
+        // ---------- slot part icons: ui_part_icons_a / _b.png (2026-11-10, ChatGPT sheets), 8 × 5 cells of 192 × 204.8 px,
+        // catalogue order (Skills.Defs 0 .. 79: sheet a = 0 .. 39, sheet b = 40 .. 79), transparent background ----------
+        static Texture2D gPartA, gPartB; static bool gPartLoaded;
+        public static int PartIconIndex(string id) { var d = Skills.Defs; for (int i = 0; i < d.Length; i++) if (d[i].id == id) return d[i].grudge ? -1 : i; return -1; }
+        public static bool PartIconArt(Rect r, int index)
+        {
+            if (!gPartLoaded) { gPartLoaded = true; gPartA = Resources.Load<Texture2D>("UI/ui_part_icons_a"); gPartB = Resources.Load<Texture2D>("UI/ui_part_icons_b"); }
+            if (index < 0 || index >= 80) return false;
+            var tex = index < 40 ? gPartA : gPartB; if (!tex) return false;
+            int i = index % 40, c = i % 8, row = i / 8;
+            GUI.DrawTextureWithTexCoords(r, tex, new Rect(c / 8f, 1 - (row + 1) / 5f, 1 / 8f, 1 / 5f), true); return true;
         }
         /// ui_skill_icons.png cell of a skill id (-1 = no art yet: UiArt.Icon fallback)
         static int AtlasIndex(string id) => System.Array.IndexOf(new[] { "counter", "whirl", "wave", "storm", "overload" }, id);
@@ -447,8 +459,9 @@ namespace Soul
             if (o.equipped) { Skills.Unequip(o); return $"{o.def.name} 해제"; }
             var blk = Skills.EquipBlocker(o); if (blk != null) return blk;
             Skills.Equip(o);
+            if (o.Active && KeyBinds.AutoSkillKeys) KeyBinds.EnsureSkillKey(o);   // WASD: the next free slot key (also when its old key was taken meanwhile)
             if (o.Active && o.key == KeyCode.None) { bindPending = o; return $"{o.def.name} 장착 — 사용할 키를 누르세요"; }
-            return $"{o.def.name} 장착";
+            return o.Active ? $"{o.def.name} 장착 · {KeyName(o.key)} 키" : $"{o.def.name} 장착";
         }
 
         void SlotsTab(Rect body, Event ev)
@@ -471,7 +484,7 @@ namespace Soul
                 float cx = left.x + p * (colW + 10);
                 GUI.color = col; GUI.Label(new Rect(cx, cy, colW, 22), Skills.SlotNames[p], gTitle);
                 GUI.color = new Color(.7f, .76f, .82f); GUI.Label(new Rect(cx, cy, colW, 22), $"{Skills.Used(s)}/{Skills.SlotCount(s)}", gNumRight);
-                var eq = new List<Skills.Owned>(); foreach (var o in Skills.owned) if (o.equipped && !o.def.grudge && o.def.slot == s) eq.Add(o);
+                var eq = Skills.Ordered(s);   // slot order 1-2-3 (회로 연결 neighbours)
                 for (int k = 0; k < Skills.MAX_SLOTS; k++)
                 {
                     var r = new Rect(cx, cy + 26 + k * (slotH + 6), colW, slotH);
@@ -525,12 +538,13 @@ namespace Soul
             }
             var c = SlotColors[(int)sel.def.slot];
             var ic = new Rect(x, yy, 54, 54); int idx = AtlasIndex(sel.def.id);
-            GUI.color = Color.white; if (!SkillIconArt(ic, idx) && !UiArt.Icon(ic, sel.def.icon)) { GUI.color = c; GUI.DrawTexture(ic, gDisc); }
+            GUI.color = Color.white; if (!PartIconArt(ic, PartIconIndex(sel.def.id)) && !SkillIconArt(ic, idx) && !UiArt.Icon(ic, sel.def.icon)) { GUI.color = c; GUI.DrawTexture(ic, gDisc); }
             GUI.color = c; GUI.Label(new Rect(ic.xMax + 10, yy + 2, w - 64, 24), sel.def.name, gTitle);
             GUI.color = new Color(.72f, .78f, .84f);
-            GUI.Label(new Rect(ic.xMax + 10, yy + 28, w - 64, 20), $"{Skills.SlotNames[(int)sel.def.slot]} · {(sel.def.grudge ? "원혼 파츠" : sel.def.passive ? "패시브" : "액티브")} · {sel.def.part}", gSmall);
-            yy += 64;
-            GUI.color = Color.white; GUI.Label(new Rect(x, yy, w, 40), sel.def.desc, gBody); yy += 44;
+            GUI.Label(new Rect(ic.xMax + 10, yy + 28, w - 64, 20), $"{Skills.SlotNames[(int)sel.def.slot]} · {(sel.def.grudge ? "붉은 부품" : sel.def.passive ? "패시브" : "액티브")} · {sel.def.part}", gSmall);
+            GUI.color = Skills.GradeColors[sel.def.grade]; GUI.Label(new Rect(ic.xMax + 10, yy + 46, w - 64, 18), Skills.GradeNames[sel.def.grade] + (sel.def.link != Link.None ? "  ◆ 회로" : "") + (sel.def.costly ? "  ⚠ 대가" : ""), gSmall);
+            yy += 68;
+            GUI.color = Color.white; float dh = gBody.CalcHeight(new GUIContent(sel.def.desc), w); GUI.Label(new Rect(x, yy, w, dh), sel.def.desc, gBody); yy += dh + 6;
             GUI.color = new Color(.8f, .85f, .9f);
             string st = sel.def.passive ? $"Lv {sel.level} / {Skills.MAX_LEVEL}" : $"Lv {sel.level} / {Skills.MAX_LEVEL}  ·  피해 ×{Skills.DamageScale(sel):F2}  ·  쿨 {Skills.Cooldown(sel, sel.def.id == "counter" ? Growth.CounterCdScale : 1):F1}초";
             GUI.Label(new Rect(x, yy, w, 20), st, gSmall); yy += 22;
@@ -540,6 +554,34 @@ namespace Soul
                 if (pk.skill != sel.def.id) continue;
                 bool on = sel.level >= pk.level; GUI.color = on ? new Color(.55f, 1, .65f) : new Color(.5f, .55f, .6f);
                 GUI.Label(new Rect(x, yy, w, 20), (on ? "✔ " : "· ") + $"Lv{pk.level} {pk.desc}", gSmall); yy += 20;
+            }
+            if (sel.def.lv3 != null)
+            {   // Lv3 fixed, Lv5 two branches (click to pick at a pod)
+                void Line(string head, string text, bool on, bool picked, int branch)
+                {
+                    float h = gSmall.CalcHeight(new GUIContent(head + text), w - 6); var r = new Rect(x, yy, w, h + 2);
+                    if (picked) { GUI.color = new Color(.3f, .6f, 1f, .18f); GUI.DrawTexture(r, white); }
+                    GUI.color = on ? new Color(.55f, 1, .65f) : picked ? new Color(.8f, .88f, 1f) : new Color(.55f, .6f, .66f);
+                    GUI.Label(new Rect(x + 3, yy, w - 6, h + 2), head + text, gSmall);
+                    if (branch > 0 && ev.type == EventType.MouseDown && ev.button == 0 && r.Contains(ev.mousePosition))
+                    {
+                        ev.Use();
+                        if (!pod) Cue("갈래는 충전 포드 앞에서 고른다", 1.4f);
+                        else { sel.branch = branch; Cue($"{sel.def.name} · Lv5 {(branch == 1 ? "①" : "②")}", 1.2f); }
+                    }
+                    yy += h + 4;
+                }
+                Line("Lv3  ", sel.def.lv3, sel.Lv3, false, 0);
+                Line("Lv5 ①  ", sel.def.lv5a, sel.B1, sel.branch != 2, 1);
+                Line("Lv5 ②  ", sel.def.lv5b, sel.B2, sel.branch == 2, 2);
+                if (pod && sel.equipped && Skills.Used(sel.def.slot) > 1)
+                {
+                    var sb = new Rect(x, yy + 2, w, 24);
+                    GUI.color = sb.Contains(ev.mousePosition) ? new Color(.6f, .85f, 1f) : new Color(.5f, .65f, .8f);
+                    GUI.Label(sb, $"▶ 칸 옮기기 (지금 {sel.pos + 1}번 칸, 옆칸끼리 회로 연결)", gSmall);
+                    if (ev.type == EventType.MouseDown && ev.button == 0 && sb.Contains(ev.mousePosition)) { ev.Use(); Skills.Shift(sel); }
+                    yy += 26;
+                }
             }
             GUI.color = sel.On ? new Color(.55f, 1, .65f) : new Color(1, .75f, .5f);
             GUI.Label(new Rect(x, yy + 4, w, 20), sel.def.grudge ? "● 영구 장착 (뗄 수 없음)" : sel.equipped ? "● 장착 중" : "○ 보관 중 — " + (Skills.EquipBlocker(sel) ?? "장착 가능"), gSmallBold);
@@ -569,9 +611,10 @@ namespace Soul
         void SkillChip(Rect r, Skills.Owned o, Color col, bool hi)
         {
             if (hi) { GUI.color = new Color(col.r, col.g, col.b, .18f); GUI.DrawTexture(r, white); }
+            if (!o.def.grudge) { var gc = Skills.GradeColors[o.def.grade]; GUI.color = new Color(gc.r, gc.g, gc.b, .9f); GUI.DrawTexture(new Rect(r.x, r.y, 3, r.height), white); }   // 등급 색
             float s = Mathf.Min(r.height - 12, 44); var ic = new Rect(r.x + 6, r.y + (r.height - s) / 2, s, s);
             int idx = AtlasIndex(o.def.id);
-            GUI.color = Color.white; if (!SkillIconArt(ic, idx) && !UiArt.Icon(ic, o.def.icon)) { GUI.color = col; GUI.DrawTexture(ic, gDisc); }
+            GUI.color = Color.white; if (!PartIconArt(ic, PartIconIndex(o.def.id)) && !SkillIconArt(ic, idx) && !UiArt.Icon(ic, o.def.icon)) { GUI.color = col; GUI.DrawTexture(ic, gDisc); }
             float tx = ic.xMax + 8, tw = r.xMax - tx - 4;
             GUI.color = Color.white; GUI.Label(new Rect(tx, r.y + r.height / 2 - 19, tw, 20), o.def.name, gSmallBold);
             GUI.color = o.def.passive ? new Color(.6f, .9f, .7f) : new Color(.6f, .8f, 1f);

@@ -7,7 +7,7 @@ namespace Soul
     // fight); walking over it picks it up; at a pod a panel offers "submit for purification" or "equip" (equip asks
     // twice: it cannot be undone). Pod purification runs on play time; when it finishes the zone greens further
     // (WorldStreamer bloom ×1.8 via GrudgeParts.IsCleansed) and basic parts are paid out.
-    // Debug: Shift+7 drops the Z0 part at the player.
+    // Debug: ` + 7 drops the Z0 part at the player.
     public partial class SoulGame
     {
         class GrudgeDropFx { public int zone; public GameObject go, glow; public Vector3 pos; public float t; }
@@ -46,7 +46,7 @@ namespace Soul
         {
             if (!grudgeInit) GrudgeInit();
             var p = ch.root.position;
-            if (Input.GetKeyDown(KeyCode.Alpha7) && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))) GrudgeDrop(0, p + ch.Forward * 2.5f);
+            if (Input.GetKeyDown(KeyCode.Alpha7) && DebugLayer) GrudgeDrop(0, p + ch.Forward * 2.5f);   // debug: ` + 7
             for (int i = grudgeDrops.Count - 1; i >= 0; i--)
             {
                 var d = grudgeDrops[i]; d.t += dt;
@@ -108,7 +108,7 @@ namespace Soul
                 GUI.Label(new Rect(W - 380, py, 360, 20), $"정화 중 · {GrudgeParts.Defs[pd.zone].name} @ {pd.pod.name} · {m}분", small);
                 py -= 20;
             }
-            if (debugHud) { GUI.color = Color.white; GUI.Label(new Rect(20, 142, 520, 20), $"원혼 장착 {GrudgeParts.Count} · 엔딩 루트 {GrudgeParts.Route} · Shift+7 원혼 파츠 드롭", small); }
+            if (debugHud) { GUI.color = Color.white; GUI.Label(new Rect(20, 142, 520, 20), $"원혼 장착 {GrudgeParts.Count} · 엔딩 루트 {GrudgeParts.Route} · ` + 7 원혼 파츠 드롭", small); }
             GUI.color = Color.white;
         }
     }

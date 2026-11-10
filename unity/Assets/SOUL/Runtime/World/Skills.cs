@@ -3,55 +3,63 @@ using UnityEngine;
 
 namespace Soul
 {
-    // 부위 슬롯 스킬 (기획_결정사항.md '부위 슬롯 + 공용 노드 + 모듈 업그레이드', user decision 2026-11-10):
-    //   every skill reward belongs to one body part (slot) and works only while it sits in one of that part's slots.
-    //   Slots: 1 per part at the start, +1 per 'slot' growth node of the matching branch (max 3). At most 6 actives
-    //   are equipped at once (each gets a key); passives just fill slots. Swapping is done at a charging pod; the
-    //   upgrade level (basic parts, Lv1-5) stays with the skill. Grudge skills (원혼 파츠, e.g. 코어 과부하) attach
-    //   outside the slots, permanently. Movement abilities are 모듈 업그레이드 (Parts bits, ZoneGraph.cs), always on.
-    //   The full ~60-skill catalog comes from 기획서/스킬_슬롯_카탈로그.md: add rows to Defs.
+    // 부위 슬롯 스킬 (기획서/스킬_슬롯_카탈로그.md 7 ~ 8절, decisions 2026-11-10):
+    //   80 slot parts (30 actives + 50 passives, 16 per body part), generated into SkillCatalog.cs from the catalogue.
+    //   Every part belongs to one body part and works only while it sits in one of that part's slots (1 + growth
+    //   nodes, max 3, ordered 1-2-3: 회로 연결 neighbours). At most 6 actives (keys 1 2 3 4 Q E in WASD).
+    //   Swapping / reordering at a charging pod; the level (Lv1-5) and the Lv5 branch stay with the part.
+    //   Grudge skills (붉게 빛나는 부품, e.g. 코어 과부하) attach outside the slots, permanently.
+    //   Behaviour: Game/SoulGame.Parts.cs (framework: statuses, reactions, heat, circuits, triggers),
+    //   SoulGame.PartsActive.cs (the 30 actives), SoulGame.PartsPassive.cs (the 50 passives).
     public enum Slot { Head, Body, Weapon, Arm, Legs }
+    /// 회로 연결: Adjacent = works with the neighbouring slots of its own part; Core* = a body part that amplifies a part
+    public enum Link { None, Adjacent, CoreWeapon, CoreHead, CoreLegs, CoreArm, BodyAdjacent, CoreAll }
     public class SkillDef
     {
         public string id, name, part, desc; public float cooldown; public int icon; public KeyCode legacy = KeyCode.None;
         public Slot slot; public bool passive, grudge;
+        /// 0 일반 · 1 정밀 · 2 희귀 · 3 고대
+        public int grade; public int zone = -1; public Link link; public bool costly;
+        /// web move played when cast (actives); legacy skills keep their old cast path
+        public string move;
+        /// effect text per level step (catalogue): Lv3 fixed, Lv5 two branches
+        public string lv3, lv5a, lv5b;
     }
 
-    public static class Skills
+    public static partial class Skills
     {
         public const int MAX_LEVEL = 5, MAX_ACTIVE = 6, START_SLOTS = 1, MAX_SLOTS = 3;
         public static readonly string[] SlotNames = { "머리", "몸통", "무기", "팔", "다리" };
+        public static readonly string[] GradeNames = { "일반", "정밀", "희귀", "고대" };
+        public static readonly Color[] GradeColors = { new Color(.62f, .65f, .68f), new Color(.35f, .65f, 1f), new Color(.72f, .45f, 1f), new Color(1f, .78f, .3f) };
         /// growth branch (Growth.CORE .. HEAD) -> the slot its 'slot' nodes extend
         public static readonly Slot[] BranchSlot = { Slot.Body, Slot.Weapon, Slot.Arm, Slot.Legs, Slot.Head };
-        /// legacy = the old fixed key the move code still uses internally (SoulGame.Skill)
-        public static readonly SkillDef[] Defs =
-        {
-            new SkillDef { id = "counter",  name = "반격",        part = "방어 장갑",           slot = Slot.Arm,    cooldown = 5, icon = UiArt.PARRY, legacy = KeyCode.E, desc = "공격을 받아쳐 경직과 피해" },
-            new SkillDef { id = "whirl",    name = "회오리",      part = "회전 관절",           slot = Slot.Weapon, cooldown = 4, icon = UiArt.WHIRL, legacy = KeyCode.Q, desc = "몸을 돌려 주위를 벤다" },
-            new SkillDef { id = "wave",     name = "레이저 파동", part = "칼날 방출기",         slot = Slot.Weapon, cooldown = 3, icon = UiArt.WAVE,  legacy = KeyCode.W, desc = "칼날로 빛의 파동을 날린다" },
-            new SkillDef { id = "storm",    name = "칼날 폭풍",   part = "고속 구동부",         slot = Slot.Weapon, cooldown = 9, icon = UiArt.STORM, legacy = KeyCode.R, desc = "뛰어올라 칼날을 휘몰아친다" },
-            new SkillDef { id = "suck",     name = "흡입",        part = "준설기 흡입구",       slot = Slot.Arm,    cooldown = 8, icon = UiArt.WAVE, desc = "앞쪽 적을 끌어당겨 모은다" },
-            new SkillDef { id = "toxic",    name = "독에 잠식된 코어", part = "껍질 숙주의 코어", slot = Slot.Body, passive = true, icon = UiArt.CORE, desc = "공격에 독이 묻는다 (3초) · 칼날이 보라색으로 물든다" },
-            new SkillDef { id = "overload", name = "코어 과부하", part = "뒤틀린 에너지 코어",  slot = Slot.Body, grudge = true, cooldown = 45, icon = UiArt.CORE, desc = "체력 회복 · 이동 속도 증가 · 받는 피해 증가" },
-        };
-        /// draft sources: skill shrine (공명 기둥) of each zone; grudge parts by zone
-        public static readonly string[] ShrineSkill = { "counter", "whirl", null, "storm", null, null, null, null };   // wave moved to the Z0 elite (2026-11-09); Z2 shrine: new skill TBD
+        static readonly SkillDef Overload = new SkillDef { id = "overload", name = "코어 과부하", part = "뒤틀린 에너지 코어", slot = Slot.Body, grudge = true, cooldown = 45, icon = UiArt.CORE, desc = "체력 회복 · 이동 · 공격 속도 증가 · 받는 피해 증가 · 코어 열 +6", grade = 3 };
+        static SkillDef[] defs;
+        /// the 80 catalogue parts + the grudge skills. legacy = an internal move id of the four original skills
+        /// (Q whirl, W wave, E counter, R storm; SoulGame.Skill / COOLDOWN), NOT an input key.
+        public static SkillDef[] Defs { get { if (defs == null) { var l = new List<SkillDef>(Catalog) { Overload }; defs = l.ToArray(); } return defs; } }
+        /// 공명 기둥 reward per zone (catalogue 7-4); grudge parts by zone
+        public static readonly string[] ShrineSkill = { "counter", "whirl", "discharge", "storm", "mark", "slam", "resonance", null };
         public static readonly string[] GrudgeSkill = { "overload", null, null, null, null, null, null, null };
-        /// keys the game already uses (or reserves for debug): never offered for binding
-        public static readonly HashSet<KeyCode> Reserved = new HashSet<KeyCode>
-        {
-            KeyCode.A, KeyCode.Space, KeyCode.F, KeyCode.M, KeyCode.G, KeyCode.T, KeyCode.V, KeyCode.C, KeyCode.P, KeyCode.H, KeyCode.K, KeyCode.X,
-            KeyCode.Tab, KeyCode.Escape, KeyCode.Return, KeyCode.Period, KeyCode.LeftShift, KeyCode.RightShift, KeyCode.LeftControl,
-            KeyCode.RightControl, KeyCode.LeftAlt, KeyCode.RightAlt, KeyCode.LeftWindows, KeyCode.RightWindows,
-            KeyCode.Alpha0, KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9,
-        };
+        /// keys never offered for a skill. Written here: only the fixed system keys nobody else manages (X = repair kit).
+        /// KeyBinds.Sync() adds the rest at run time: the debug keys, the current basic keys (attack, dash, jump, ...)
+        /// and, in the WASD scheme, the W A S D move keys. The number keys are free (2026-11-10: slot skills use 1-4).
+        public static readonly HashSet<KeyCode> Reserved = new HashSet<KeyCode> { KeyCode.X, KeyCode.Escape, KeyCode.Return };
 
         public class Owned
         {
             public SkillDef def; public KeyCode key = KeyCode.None; public int level = 1; public float ready; public bool equipped;
+            /// Lv5 branch: 0 = not chosen yet (picks ① by default), 1 = ①, 2 = ②
+            public int branch;
+            /// slot order inside its part (0..2): 회로 연결 neighbours
+            public int pos;
             public bool Active => !def.passive;
             /// works right now: grudge skills always, slot skills while equipped
             public bool On => def.grudge || equipped;
+            public bool Lv3 => level >= 3;
+            public bool B1 => level >= 5 && branch != 2;
+            public bool B2 => level >= 5 && branch == 2;
         }
         public static readonly List<Owned> owned = new List<Owned>();
 
@@ -62,6 +70,8 @@ namespace Soul
         public static bool Has(string id) => Get(id) != null;
         /// owned and working (equipped, or a grudge skill)
         public static bool IsOn(string id) { var o = Get(id); return o != null && o.On; }
+        /// the working part, or null
+        public static Owned On(string id) { var o = Get(id); return o != null && o.On ? o : null; }
         public static Owned Grant(string id)
         {
             var d = Def(id); if (d == null || Has(id)) return null;
@@ -83,14 +93,74 @@ namespace Soul
             if (o.Active && ActiveCount >= MAX_ACTIVE) return $"액티브 스킬은 {MAX_ACTIVE}개까지 장착한다";
             return null;
         }
-        public static bool Equip(Owned o) { if (EquipBlocker(o) != null) return false; o.equipped = true; return true; }
-        public static void Unequip(Owned o) { if (o != null && !o.def.grudge) o.equipped = false; }
+        public static bool Equip(Owned o)
+        {
+            if (EquipBlocker(o) != null) return false;
+            o.equipped = true; o.pos = Used(o.def.slot) - 1; Renumber(o.def.slot); return true;
+        }
+        public static void Unequip(Owned o) { if (o != null && !o.def.grudge) { o.equipped = false; Renumber(o.def.slot); } }
+        /// the equipped parts of a body part in slot order (1-2-3)
+        public static List<Owned> Ordered(Slot s)
+        {
+            var l = new List<Owned>(); foreach (var o in owned) if (o.equipped && !o.def.grudge && o.def.slot == s) l.Add(o);
+            l.Sort((a, b) => a.pos.CompareTo(b.pos)); return l;
+        }
+        static void Renumber(Slot s) { var l = Ordered(s); for (int i = 0; i < l.Count; i++) l[i].pos = i; }
+        /// pod: move a part one slot to the right inside its part (wraps around)
+        public static void Shift(Owned o)
+        {
+            var l = Ordered(o.def.slot); int i = l.IndexOf(o); if (i < 0 || l.Count < 2) return;
+            int j = (i + 1) % l.Count; l[i].pos = j; l[j].pos = i; Renumber(o.def.slot);
+        }
+        /// the parts in the neighbouring slots (slot 2 touches 1 and 3; 1 and 3 touch only 2)
+        public static List<Owned> Neighbours(Owned o)
+        {
+            var r = new List<Owned>(); if (o == null || !o.equipped) return r;
+            var l = Ordered(o.def.slot); int i = l.IndexOf(o);
+            if (i > 0) r.Add(l[i - 1]); if (i >= 0 && i + 1 < l.Count) r.Add(l[i + 1]);
+            return r;
+        }
+        public static bool NextTo(Owned o, string id) { foreach (var n in Neighbours(o)) if (n.def.id == id) return true; return false; }
         /// slots shrank (never in play, but tests / resets): unequip the overflow
         public static void ClampSlots()
         {
             foreach (Slot s in System.Enum.GetValues(typeof(Slot)))
                 for (int i = owned.Count - 1; i >= 0 && Used(s) > SlotCount(s); i--) if (owned[i].def.slot == s && owned[i].equipped && !owned[i].def.grudge) owned[i].equipped = false;
         }
+
+        // ---------- 회로 연결 (catalogue 7-3) ----------
+        public const float AMP_CAP = .5f;
+        /// amplification of a part from the circuit parts around it (sum, capped; circuit parts don't amplify each
+        /// other except 원형 코어). Amplifies the main number of a passive / the damage of an active.
+        public static float Amp(Owned o)
+        {
+            if (o == null || !o.equipped || o.def.grudge) return 0;
+            float a = 0, cap = AMP_CAP;
+            var proto = On("protocore");
+            if (proto != null && proto.B2) cap = .7f;
+            bool circuit = o.def.link != Link.None;
+            foreach (var c in owned)
+            {
+                if (!c.equipped || c == o || c.def.grudge) continue;
+                float lv = 1 + .1f * (c.level - 1);
+                switch (c.def.link)
+                {
+                    case Link.CoreWeapon: if (o.def.slot == Slot.Weapon && !circuit) a += (c.B2 ? .25f : .15f) * lv; break;
+                    case Link.CoreHead: if (o.def.slot == Slot.Head && !circuit) a += (c.B2 ? .25f : .15f) * lv; break;
+                    case Link.CoreLegs: if (o.def.slot == Slot.Legs && !circuit) a += .15f * lv; break;
+                    case Link.CoreArm: if (o.def.slot == Slot.Arm && !circuit) a += .20f * lv; break;
+                    case Link.BodyAdjacent: if (NextTo(c, o.def.id) && !circuit) a += (c.B2 ? .30f : .20f) * lv; break;
+                    case Link.CoreAll: if (NextTo(c, o.def.id)) a += .15f * lv; break;
+                }
+                if (c.def.id == "towerlens" && NextTo(c, o.def.id) && !circuit) a += (c.B2 ? .35f : .25f) * lv;
+            }
+            if (proto != null && proto != o && circuit) a += .10f;
+            return Mathf.Min(a, cap);
+        }
+        /// level and circuit scale of a part's main number: Lv1 1.0 .. Lv5 1.4, × (1 + Amp)
+        public static float Power(Owned o) => o == null ? 0 : (1 + .1f * (o.level - 1)) * (1 + Amp(o));
+        public static float Power(string id) => Power(On(id));
+        public static int CircuitCount { get { int n = 0; foreach (var o in owned) if (o.equipped && o.def.link != Link.None) n++; return n; } }
 
         // ---------- upgrades: spend basic parts from the wallet (SoulGame.scrap) ----------
         /// wallet cost to go from level i+1 to i+2 (Lv2 30, Lv3 60, Lv4 100, Lv5 150)
@@ -100,25 +170,17 @@ namespace Soul
         public static bool LevelUp(Owned o, ref int wallet)
         {
             if (o == null || o.level >= MAX_LEVEL || wallet < Cost(o)) return false;
-            wallet -= Cost(o); o.level++; return true;
+            wallet -= Cost(o); o.level++; if (o.level >= MAX_LEVEL && o.branch == 0) o.branch = 1; return true;
         }
-        /// per level above 1: damage +12 %, cooldown -8 %
-        public static float DamageScale(Owned o) => o == null ? 1 : (1 + .12f * (o.level - 1)) * (1 + Perk(o, PerkKind.Damage));
+        /// actives: per level above 1 damage +12 % (× circuit amp), cooldown -8 %
+        public static float DamageScale(Owned o) => o == null ? 1 : (1 + .12f * (o.level - 1)) * (1 + Amp(o)) * (1 + Perk(o, PerkKind.Damage));
         public static float CooldownScale(Owned o) => o == null ? 1 : 1 - .08f * (o.level - 1);
 
-        // ---------- extra effects per skill level (edit this table) ----------
+        // ---------- numeric perks still read by the old code paths (grudge skills); slot parts use lv3 / lv5 ----------
         public enum PerkKind { Range, Damage, CooldownSec, Window, Duration, Regen }
         public class SkillPerk { public string skill; public int level; public PerkKind kind; public float value; public string desc; }
         public static readonly SkillPerk[] Perks =
         {
-            new SkillPerk { skill = "whirl",    level = 3, kind = PerkKind.Range,       value = .20f, desc = "범위 +20%" },
-            new SkillPerk { skill = "whirl",    level = 5, kind = PerkKind.Damage,      value = .15f, desc = "피해 +15%" },
-            new SkillPerk { skill = "storm",    level = 3, kind = PerkKind.Range,       value = .20f, desc = "범위 +20%" },
-            new SkillPerk { skill = "storm",    level = 5, kind = PerkKind.CooldownSec, value = 1.5f, desc = "쿨다운 −1.5초" },
-            new SkillPerk { skill = "wave",     level = 3, kind = PerkKind.CooldownSec, value = .5f,  desc = "쿨다운 −0.5초" },
-            new SkillPerk { skill = "wave",     level = 5, kind = PerkKind.Damage,      value = .20f, desc = "피해 +20%" },
-            new SkillPerk { skill = "counter",  level = 3, kind = PerkKind.Window,      value = .05f, desc = "판정 시간 +0.05초" },
-            new SkillPerk { skill = "counter",  level = 5, kind = PerkKind.Damage,      value = .25f, desc = "피해 +25%" },
             new SkillPerk { skill = "overload", level = 3, kind = PerkKind.Duration,    value = 2f,   desc = "지속 +2초" },
             new SkillPerk { skill = "overload", level = 5, kind = PerkKind.Regen,       value = .01f, desc = "초당 회복 +1% (최대 체력)" },
         };
@@ -129,7 +191,7 @@ namespace Soul
 
         // ---------- 코어 과부하 (Z0 grudge part) ----------
         /// draft numbers (기획_결정사항.md): 8 s, 4 % of max HP per second, move +30 %, damage taken +50 %; per level
-        /// above 1 the duration grows by 0.5 s; Perks add Lv3 +2 s, Lv5 +1 %/s
+        /// above 1 the duration grows by 0.5 s; Perks add Lv3 +2 s, Lv5 +1 %/s. 2026-11-10: also core heat +6 (a price)
         public const float OVERLOAD_TIME = 8, OVERLOAD_REGEN = .04f, OVERLOAD_SPEED = 1.3f, OVERLOAD_TAKEN = 1.5f;
     }
 }

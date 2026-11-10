@@ -17,11 +17,7 @@
   - 사체 발판 반경은 2.8 m이고, 숨은 단은 `MirePools.Ledge = Host + 10.2`입니다.
 - **보스 에너지 기둥 (Codex 11)**: 실제 모델로 바뀌었습니다(`World/BossPillarProps.cs`, 캡처 `Captures/codex11_pillar.png`).
 - **다음 작업 (우선순위 순)**
-  1. **슬롯 스킬 60개 카탈로그 넣기**
-     - 별도 세션 skill-slot-deck이 `../기획서/스킬_슬롯_카탈로그.md`와 `20261110_ALONE_성장스킬시스템기획서_v0.1_정승운.pptx`를 만드는 중입니다.
-     - 확정되면 `Skills.Defs`에 행을 추가하고 `CastSkill`에 액티브를 구현합니다. 패시브 효과는 `GrowthApply`와 `SkillDamageScale` 쪽에 붙입니다.
-     - 획득처를 배치합니다: 엘리트 드롭(`OnFieldKill`의 kind 표), 숨은 단(`Caches`), 공명 기둥(`Skills.ShrineSkill`), 존별 상인 상품(`SoulGame.Field` `Wares`), 생존자 기록 보상.
-     - 상인은 지금 Z0 하나뿐이고 상품도 옛 4종(키트 30, 나머지 80 부품)입니다. 존마다 상인을 두고, 상품을 슬롯 스킬로 바꿔야 합니다.
+  1. **슬롯 파츠 80개 (2026-11-10 구현됨, 맨 아래 '슬롯 파츠 80개 구현' 절)**: 플레이 감각 · 수치 조정과 Z1 ~ Z5 · Z7 배치가 남았습니다.
   2. 노드 트리에서 슬롯 확장으로 바뀌며 빠진 스탯이 있습니다(재생 II, 3타, 스킬 증폭, 되받아치기 등). 카탈로그의 패시브로 옮길지 정합니다.
   3. Z6 플레이 검증
      - 사체 껍질 → 숨은 단 점프 거리를 확인합니다.
@@ -1079,3 +1075,47 @@ Unity 쪽 C#(애니메이터 등)을 고쳤다면 웹과 갈라집니다. 앞으
 - 일반 몹은 포드 휴식 대신 타이머 리스폰(`RespawnDue`: 죽은 지 150초 + 영역 밖 60 m).
 - 60개 스킬 카탈로그는 기획 세션(`기획서/스킬_슬롯_카탈로그.md`)에서 나오는 대로 `Skills.Defs`에 추가.
 - Z6 껍질 숙주: Codex 24로 저그 벌레 × 거북 모델(다리 옆으로) + 같은 생물의 사체, 사체 발판은 4박스 16각형(2.8 m), 숨은 단 Host+10.2.
+
+## 2026-11-10 WASD 조작 + 조건부 추적 카메라 (기획_결정사항.md '월드 / 맵 구조'의 시점 · 조작 항목)
+
+이 문서 위쪽의 조작 설명(우클릭 이동, A 평타, Shift+숫자 디버그 등)은 '클릭 이동' 방식 기준이고, 기본값은 이제 WASD입니다.
+
+- **조작 방식 2개** (`Game/KeyBinds.cs` `Scheme`, Esc 설정 창 '키 설정' 탭 맨 위에서 전환)
+  - WASD(기본): W A S D 이동(고정 키), 좌클릭 평타, 우클릭 로프, Left Shift 대쉬, Space 점프, 스킬 1 2 3 4 Q E(원혼 스킬은 R).
+  - 클릭 이동: 예전 배치 그대로(우클릭 이동, A 평타, 좌클릭 로프, Space 대쉬, F 점프, 스킬 키는 획득할 때 직접 지정).
+  - 방식마다 키 묶음을 따로 저장합니다: `soul.ctl.scheme`, `soul.key.wasd.<Act>`, `soul.key.click.<Act>`. 예전 저장값 `soul.key.<Act>`는 첫 로드 때 클릭 이동 묶음으로 옮깁니다.
+  - WASD에서는 새 액티브 스킬이 빈 슬롯 키를 자동으로 받습니다(`KeyBinds.EnsureSkillKey`). 방식을 바꾸면 스킬 키를 다시 배치하고, 방식별 키는 기억합니다(`SetScheme`).
+- **이동** (`Game/SoulGame.Move.cs` `MoveDir` / `FrameInput`)
+  - 방향은 카메라 기준이지만, 시점 yaw는 **누른 키 조합이 바뀔 때만** 다시 읽습니다. 같은 키를 누르고 있는 동안에는 카메라가 돌아도 진행 방향이 월드에서 곧게 유지됩니다. 이게 없으면 W+D에서 카메라와 방향이 서로 쫓아 원을 그립니다.
+  - 대쉬는 누르고 있는 이동 방향으로, 입력이 없으면 커서 방향입니다. 달리며 점프하면 그 방향으로 약 2.7 m 뜁니다.
+  - 키를 떼면 멈추는 거리를 0.8 m → 0.4 m로 줄였습니다(`WASD_STOP_SHARPNESS`, `SoulAnimator.stopSharpness`). 요청에 없던 조정이니 느낌을 보고 값을 바꾸세요.
+- **카메라** (`Game/FollowCam.cs` `Follow`, 상수 `FOLLOW_*`)
+  - WASD에서만, 위협이 없을 때(`VistaCalm`, 보스 · 엘리트 프레이밍 없음), W가 들어간 이동을 1초 넘게 하면 이동 방향 뒤로 돕니다. 최대 속도 기본 초당 45도(설정 20 ~ 60), 가속 110, 감속 160도/s². 오차 3도 미만이면 시작하지 않고, 돌기 시작하면 0.6도까지 맞춥니다.
+  - A / D만, S, S+A / D에는 돌지 않습니다. T는 예전처럼 즉시 등 뒤 정렬입니다.
+  - 설정 창 '화면' 탭: '카메라 자동 회전' 켜기 / 끄기, '자동 회전 속도'. 저장 키 `soul.cam.follow`, `soul.cam.followSpeed`.
+- **디버그 키 이동**: 소환 1 / 2 → F3 / F4, 전부 제거 0 → F5, 파츠 토글 Shift+1~6 / 8 → `` ` `` + 1~6 / 8, 원혼 드롭 Shift+7 → `` ` `` + 7, 지도 순간이동 Shift+클릭 → Ctrl+클릭(Shift도 됨). `KeyBinds.DebugKeys`에서 숫자키와 Shift를 뺐습니다.
+- `SkillDef.legacy`(Q / W / E / R)와 `Skill(KeyCode.Space / F)`는 입력 키가 아니라 내부 동작 id입니다. `Skills.Defs` 행은 건드리지 않았습니다. `Skills.Reserved`는 X, Esc, Enter만 적어 두고 나머지는 `KeyBinds.Sync()`가 채웁니다.
+- **MCP 테스트**: `g.ControlTest(초, 기록 간격, 키...)`(키를 누른 채 60 fps로 돌려 yaw · 회전 속도 · 위치를 기록), `KeyBinds.fakeHeld`, `g.ClearCooldownsForTest()`, `g.DebugGrantBase()`, `g.SetControlScheme(...)`.
+- **검증한 것 (2026-11-10, Play 모드 수치)**: 컴파일 에러와 플레이 중 콘솔 에러 없음.
+  - 카메라: S / A / D / S+D / S+A 3초 회전 0도. W 3초 0도. W+D는 0.9초까지 0도, 1초 뒤 시작해 최고 45.0도/s로 44.4도 돌고 멈춤(60 설정 60.0, 20 설정 20.0, 끄면 0). 교전 중인 적이 있으면 0도. T 정렬.
+  - 기본 조작: Shift 대쉬(방향 / 커서), Space 점프와 2단 점프(도약 관절 있을 때만), 달리기 점프, 좌클릭 평타, 우클릭 로프 발사, 지도가 열려 있으면 좌클릭 평타 안 나감.
+  - 스킬 키: F2로 받은 4개가 1 2 3 4, 흡입 Q, 코어 과부하 R로 자동 배치되고 각 키로 발동. E는 여섯 번째 슬롯 액티브가 아직 `Defs`에 없어서 흡입을 설정 창에서 E로 옮겨 발동을 확인.
+  - 클릭 이동 전환: A 평타, Space 대쉬(커서 방향), F 점프, 좌클릭 로프, 우클릭 이동(카메라 회전 0도), 스킬 키 Q W E R D Z로 재배치, W A S D · Shift · 숫자키는 동작 안 함. 다시 WASD로 오면 방식별 키가 그대로 돌아옴.
+  - 설정 창: 캡처 `Captures/wasd_settings_keys.png`, `click_settings_keys.png`, `wasd_settings_screen.png`. 조작 방식 줄을 넣느라 창 높이를 540 → 580으로 늘렸습니다. 저장 / 불러오기(방식, 방식별 키, 자동 회전 켜기 · 속도)와 예전 저장값 이전 확인.
+  - `tools/settings_test.cs`를 새 구조에 맞게 고쳐 새 플레이 세션에서 통과시켰습니다(1 ~ 7은 클릭 이동, 8은 WASD와 방식 전환. 시작할 때 `Skills.Reset()`으로 얻은 스킬을 지우고, 끝에 저장값을 되돌립니다).
+- **아직 확인하지 못한 것**: 전부 MCP에서 키를 누른 셈 치고 돌린 결과입니다. 실제 키보드 · 마우스로 한 조작감, 설정 창 버튼과 슬라이더를 마우스로 직접 누르는 동작, `` ` `` + 숫자 디버그 층과 F3 / F4 / F5는 확인하지 못했습니다(실제 입력만 읽는 코드라 MCP로 누를 수 없음).
+- **알려진 점**: 공격 키를 좌클릭에서 다른 키로 바꾸면 '기본값으로'로만 좌클릭으로 되돌릴 수 있습니다(키 입력 대기가 마우스를 받지 않음). HUD 스킬 바는 얻은 순서대로라 키 순서(1 2 3 4 Q E)와 다를 수 있습니다.
+
+## 2026-11-10 슬롯 파츠 80개 구현 (기획서/스킬_슬롯_카탈로그.md 7 ~ 10절)
+- **데이터**: 카탈로그 8절 표가 원본입니다. `node unity/tools/gen_skill_defs.js`가 `Runtime/World/SkillCatalog.cs`(80행)를 다시 만듭니다. 손으로 고치지 말고 표를 고친 뒤 다시 돌리세요.
+  - `Skills.cs`: 등급(`grade`), 회로 연결(`Link`, `Skills.Amp` · `Power` · `Neighbours` · `Shift`), Lv5 갈래(`Owned.branch`, `B1` / `B2`), 칸 순서(`pos`).
+- **뼈대** `Game/SoulGame.Parts.cs`: 상태 5종(`Apply` / `HasSt`), 기계 · 유기체 상성(`ORGANIC`), 상태 반응 8가지(`React`), 코어 열(`AddHeat`, 과열 3초 / 용광로 코어 백열), 플레이어 피해 파이프라인 `HitEnemy`(모든 플레이어 공격이 여기를 거침), 장판(`AddField`, 불 · 전기와 장판 반응), 투사체(`Shoot`), 소환(`Summon`), 보호막, 시간 감속(`SlowWorld`: 적만 느려짐, `enemies.Update(step * WorldSlow)`).
+- **패시브 50개** `SoulGame.PartsPassive.cs`: 발동 조건 훅(`OnHitDealt`, `PartsOnKill`, `OnPerfectDodge`, `OnCounterSuccess`, `OnDash`, `PartsTakeHit`, `PassiveTick`), 공격 속도 `AttackSpeed`(평타와 무기 액티브 동작 재생 속도, `SoulAnimator.moveRate`, 최대 1.8배).
+- **액티브 30개** `SoulGame.PartsActive.cs`: 기존 4개(회오리 · 레이저 파동 · 반격 · 칼날 폭풍)는 옛 경로 그대로 + 훅. 나머지 26개는 웹 동작(같은 이름)을 재생하고 동작의 fx 이벤트에서 효과를 냅니다(`PartsFx`). 파츠 동작은 일반 칼날 판정을 쓰지 않습니다(`PartMove`).
+- **월드 배치** `SoulGame.PartsWorld.cs` (Z0 · Z6만): 스킬 게이트(보유만 하면 G로 열림, 문구 없음 · F1에서만 필요 스킬 표시), 존 금고(열쇠 칩 = 그 존 엘리트 전부 처치), 지름길 쌍(열면 G로 순간 이동), 은닉처(기본 부품 / 수리 키트 최대 +1), 모듈 숨은 장소, 정화 보상(정화 9초 뒤 드롭 + 빛 기둥), 생존자 기록 보상(존 기록 전부). 존별 상인 상품은 `SoulGame.Field` `ZoneWares`(Z6 배 상인은 흡입 게이트 뒤).
+- **종별 드롭**: `SoulGame.Field.SpeciesPart` 0.5% 고정, 미보유만. 아직 없는 종은 계획 키(`shockDrone` 등)로 적어 뒀습니다.
+- **아이콘**: `Resources/UI/ui_part_icons_a.png` · `_b.png` (ChatGPT 시트, 8 × 5 칸, 카탈로그 순서, 배경 투명 처리). `PartIconArt` / `PartIconIndex`.
+- **테스트 훅**: `DebugGrantAll`, `DebugLevel(id, lv, branch)`, `SlotToggle(id, true)`, `PartsState`, `EnemyStatus(e)`, `GateList`, `GateOpenForTest`, `GiveKeyChip`, `testAim`(마우스 대신 조준점), `Simulate(sec, input, clock: true)`(게임 시계 · 타이머까지 진행).
+- **검증 (2026-11-10, MCP 플레이 모드)**: 컴파일 에러 없음. 액티브 26개를 하나씩 워든에게 써서 피해 · 상태가 들어가는 것, 반응(포자 구름 + 열절단 = 폭발, 표식 + 전류 손바닥 = 유도), 공격 속도(톱날 1.15, 거미 발 1.30)를 확인했습니다. 콘솔 에러 없음.
+- **확인하지 못한 것**: 실제 조작감과 이펙트 모양, 패시브 50개 하나하나의 발동(특히 반격 · 완벽 회피 · 피격 조건), Lv5 갈래 전부, Z0 · Z6 게이트 위치가 지형에 자연스러운지(자리는 `FreeSpot`으로 빈 땅을 찾음), 상인 화면.
+- **카메라 따라오는 속도 (2026-11-10, 사용자: 조작 변경 뒤 너무 느림)**: 원인은 걸을 때 화면 중심을 이동 방향으로 앞당기는 탐험 카메라(5.5 m, 반응 1.6/s)였습니다. WASD에서만 앞당김 2.5 m, 반응 6/s, 시선 목표 14/s, 위치 12/s로 바꿨습니다(`FollowCam.leadRate` · `targetRate` · `posRate`, `SoulGame.Guide`가 조작 방식에 따라 설정). 측정: W로 달리면 화면 중심이 캐릭터 앞 약 2.7 m에서 멈추고, S로 돌아서면 약 0.5초 만에 반대편으로 넘어갑니다. 클릭 이동 값은 그대로입니다.

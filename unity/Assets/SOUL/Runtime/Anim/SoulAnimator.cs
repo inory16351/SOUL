@@ -55,6 +55,11 @@ namespace Soul
         public bool airborne;
         /// movement multiplier from the ground (water: Terrain.Slow); scales locomotion speed and move root motion
         public float speedScale = 1;
+        /// playback rate of the playing move (공격 속도, SoulGame.AttackSpeed): move time runs at dt × moveRate
+        public float moveRate = 1;
+        /// locomotion spring stiffness multiplier while braking to a stop (no move input). 1 = default coast;
+        /// the WASD scheme raises it so releasing the keys stops shorter (SoulGame.Move WASD_STOP_SHARPNESS)
+        public float stopSharpness = 1;
         float airLift, airLiftT0, airLiftT1;
         float A(Vector3 p) => ANKLE + groundAt(p.x, p.z);
         /// current jump-arc height above the take-off floor (0 when not in an arc)
@@ -211,7 +216,7 @@ namespace Soul
 
         void UpdateMove(float dt)
         {
-            var m = move; float previous = time; time = Mathf.Min(time + dt, m.duration);
+            var m = move; float previous = time; time = Mathf.Min(time + dt * moveRate, m.duration);
             if (name == "heavyCharge") charge = Mathf.Min(1, time / m.duration);
             float distance = (RootAt(m, time) - RootAt(m, previous)) * speedScale * rootScale;
             ch.root.position += Sim.ApplyAxisAngle(new Vector3(0, 0, distance), up, startYaw);
@@ -246,7 +251,7 @@ namespace Soul
             float previousSpeed = speed, targetSpeed = direction.sqrMagnitude > .01f ? (running ? 4.2f : 1.65f) * Mathf.Min(1, direction.magnitude) * speedScale : 0;
             var desired = direction.sqrMagnitude > 1e-6f ? direction.normalized * targetSpeed : Vector3.zero;
             accel ??= Vector3.zero;
-            { float w = 2 * Mathf.PI * 1.7f; accel += ((desired - velocity) * (w * w) + accel.Value * (-2 * w)) * dt; velocity += accel.Value * dt; }
+            { float w = 2 * Mathf.PI * 1.7f * (desired == Vector3.zero ? stopSharpness : 1); accel +=((desired - velocity) * (w * w) + accel.Value * (-2 * w)) * dt; velocity += accel.Value * dt; }
             speed = velocity.magnitude; if (speed < .015f) { velocity = Vector3.zero; speed = 0; }
             ch.root.position += velocity * dt;
             if (direction.sqrMagnitude > .01f) { float targetYaw = Mathf.Atan2(direction.x, direction.z), delta = Sim.Mod(targetYaw - RootYaw + Mathf.PI, Mathf.PI * 2) - Mathf.PI; RootYaw += delta * Sim.Damp(10, dt); }

@@ -4,11 +4,16 @@ using UnityEngine;
 
 namespace Soul
 {
-    // Port of web-proto/src/main.js: AOS / Lost Ark controls, combat, survival, summoning,
-    // pause, HUD. Simulation runs in fixed 1/120 s substeps (WorldStep) in sim space.
-    //   Right mouse: move     A: combo (aims at cursor)   Q cyclone  W laser wave  E counter
-    //   R blade storm  Space dash  F jump  wheel zoom  1/2 summon hound/warden  0 clear  P passive
-    //   C pause, '.' one frame while paused, V side camera, H get hit (test)
+    // Port of web-proto/src/main.js: combat, survival, summoning, pause, HUD. Simulation runs in fixed 1/120 s
+    // substeps (WorldStep) in sim space. Controls come from KeyBinds (two schemes, Esc settings, 2026-11-10):
+    //   WASD (default): W A S D move (camera-relative)  left click combo (aims at cursor)  right click rope
+    //                   Left Shift dash (move direction, else cursor)  Space jump  slot skills 1 2 3 4 Q E
+    //   click move (old Lost Ark layout): right click move  A combo  left click rope  Space dash  F jump
+    //   both: T view behind the character, M map, G rest, Tab growth, wheel zoom
+    //   debug: F3 / F4 summon hound / warden, F5 clear, ` + 1..6 / 8 toggle parts, P passive, C pause,
+    //          '.' one frame while paused, V side camera, H get hit, K purify, F1 debug HUD, F2 base skills
+    // The move code is keyed on internal ids that happen to be KeyCodes (Q whirl, W wave, E counter, R storm,
+    // Space dash, F jump: Skill(), COOLDOWN, SkillDef.legacy). They are not input keys.
     public partial class SoulGame : MonoBehaviour
     {
         public const float BOUNDS = 18;
@@ -61,6 +66,7 @@ namespace Soul
                     if (kind == "wave") { var dir = ch.Forward; vfx.SpawnWave(ch.root.position + new Vector3(0, .35f, 0) + dir * .6f, dir); cam.Shake(.05f); }
                     else if (kind == "parry") { var p = Vector3.LerpUnclamped(ch.bladeBase.WorldPosition, ch.bladeTip.WorldPosition, .4f); vfx.Ring(p, 1, true); vfx.Flash(p, .8f); face.Set("wide", .3f); }
                     else if (kind == "dash") { ghostClock = 0; vfx.Dust(GroundPoint(), 1.2f); }
+                    PartsFx(kind, n);   // slot parts (SoulGame.PartsActive)
                 },
             };
             laser = new LaserBlade(ch); face = new PixelFace(ch);
@@ -76,7 +82,7 @@ namespace Soul
                     else vfx.Dust(p, .7f);
                     if (Vector3.Distance(p, ch.root.position) < 8) cam.Shake(a.name == "slam" ? .1f : .04f);
                 },
-                onKill = e => { kills++; GainXp(Growth.KillXp(e.def)); },   // 2026-11-10: xp from kills
+                onKill = e => { kills++; GainXp(Growth.KillXp(e.def)); PartsOnKill(e); },   // 2026-11-10: xp from kills
                 onStep = (p, s) => { vfx.Dust(p, .8f * s); if (Vector3.Distance(p, ch.root.position) < 18) cam.Shake(.02f * s); },   // heavy footfalls (boss)
             };
             breakables = new Breakables(scene.breakables, vfx, 12, BOUNDS - 1);
@@ -94,7 +100,7 @@ namespace Soul
         bool Invulnerable()
         {
             string n = anim.name; float t = anim.time;
-            return RopeTravel || (n == "dash" && t < .34f) || (n == "roll" && t > .04f && t < .78f) || (n == "flurry" && t < 1.18f) || (n == "jump" && t > .2f && t < .85f);
+            return RopeTravel || (n == "dash" && t < DashInvulnTime) || realTime < invulnUntil || (n == "roll" && t > .04f && t < .78f) || (n == "flurry" && t < 1.18f) || (n == "jump" && t > .2f && t < .85f);
         }
         void PlayerDie()
         {
@@ -106,15 +112,24 @@ namespace Soul
         {
             if (enemy != null && enemy.special) dmg *= 1.3f;   // 특이 개체 hit harder
             if (!player.alive) return;
-            if (Invulnerable()) { Cue("회피!", .6f); vfx.Flash(Sim.FlatY(ch.root.position, 1.1f), .7f); return; }
+            if (enemy != null && blindUntil.TryGetValue(enemy, out var blind) && blind > realTime) { Cue("빗나감", .4f); return; }   // 섬광 렌즈
+            IsRangedHit = enemy != null && Sim.FlatY(enemy.pos - ch.root.position).magnitude > 4.5f;
+            if (Invulnerable()) { Cue("회피!", .6f); vfx.Flash(Sim.FlatY(ch.root.position, 1.1f), .7f); if (anim.name == "dash") OnPerfectDodge(enemy); return; }
             if (anim.name == "counter" && anim.time >= .03f && anim.time <= .27f + CounterWindowBonus)
             {
                 enemy.ToStagger(1.4f); enemy.Damage(10, ch.root.position, true); face.Set("wide", .9f); Cue("반격!", .8f);   // 놀람 = every successful counter
-                var p = ch.bladeBase.WorldPosition; vfx.Ring(p, 1.4f, true); vfx.Burst(p, 26, 1.3f); cam.Shake(.09f); hitStop = .1f; return;
+                var p = ch.bladeBase.WorldPosition; vfx.Ring(p, 1.4f, true); vfx.Burst(p, 26, 1.3f); cam.Shake(.09f); hitStop = .1f;
+                OnCounterSuccess(enemy); return;
             }
-            player.hp = Mathf.Max(0, player.hp - dmg * OverloadTaken); hurtFlash = 1;
-            var d = from - ch.root.position; ch.yaw = Mathf.Atan2(d.x, d.z); ch.ApplyYaw();
-            moveTarget = null; GetHit(); cam.Shake(.11f); hitStop = Mathf.Max(hitStop, .05f);
+            if (InField(ch.root.position, "steam") && ventSafeUntil > realTime) dmg *= .85f;   // 과열 배출 ①
+            dmg = PartsTakeHit(dmg * OverloadTaken, from, enemy);   // 슬롯 파츠: 장갑 · 보호막 · 버티기 ... (SoulGame.PartsPassive)
+            if (dmg <= 0) return;
+            if (enemy != null && (staticUntil > realTime || anchoredUntil > realTime) && Sim.FlatY(enemy.pos - ch.root.position).magnitude < 4) Apply(enemy, St.Shock);
+            if (enemy != null && shieldReflect && shieldHp > 0) HitEnemy(enemy, dmg * .3f, false, "shield", false, false);
+            player.hp = Mathf.Max(0, player.hp - dmg); hurtFlash = 1;
+            bool hold = anchoredUntil > realTime || DamperSkipsStagger;   // 거미 발 고정: no knockback / 충격 완충 관절 ①
+            if (!hold) { var d = from - ch.root.position; ch.yaw = Mathf.Atan2(d.x, d.z); ch.ApplyYaw(); moveTarget = null; GetHit(); }
+            cam.Shake(.11f); hitStop = Mathf.Max(hitStop, .05f);
             if (player.hp <= 0) PlayerDie();
         }
 
@@ -124,7 +139,7 @@ namespace Soul
         void AreaHits(Move m)
         {
             string n = anim.name; if (!AREA.TryGetValue(n, out var area)) return;
-            var f = ch.Forward; bool heavy = Heavy(n);
+            var f = ch.Forward; bool heavy = Heavy(n); area.r *= PartsAreaScale(n);
             PillarArea(area.r, area.a);
             foreach (var e in enemies.list)
             {
@@ -133,7 +148,7 @@ namespace Soul
                 if (dist > area.r) continue;
                 if (area.a > 0 && dist > .6f && Vector3.Dot(d.normalized, f) < Mathf.Cos(area.a / 2)) continue;
                 if (!CanHit(e, m)) continue;
-                hitSet[e] = anim.time; e.Damage((DMG.TryGetValue(n, out var dm) ? dm : 15) * SkillDamageScale(n), ch.root.position, heavy);
+                hitSet[e] = anim.time; LegacyHit(e, n, heavy);
                 vfx.Burst(e.Center(), heavy ? 28 : 18, heavy ? 1.3f : 1); cam.Shake(heavy ? .1f : .06f); hitStop = Mathf.Max(hitStop, heavy ? .07f : .045f);
                 if (heavy) face.Set("happy", .7f);
             }
@@ -150,12 +165,22 @@ namespace Soul
                 foreach (var h in enemies.HitsAlong(p, q, BLADE_REACH))
                 {
                     if (!CanHit(h.e, m)) continue;
-                    hitSet[h.e] = anim.time; h.e.Damage((DMG.TryGetValue(n, out var dm) ? dm : 15) * SkillDamageScale(n), ch.root.position, heavy);
+                    hitSet[h.e] = anim.time; LegacyHit(h.e, n, heavy);
                     vfx.Burst(h.point, heavy ? 30 : 20, heavy ? 1.4f : 1); cam.Shake(heavy ? .1f : .06f); hitStop = Mathf.Max(hitStop, heavy ? .07f : .045f);
                     if (heavy) face.Set("happy", .7f);
                 }
             }
         }
+
+        /// a hit of the A combo or a legacy skill move: through the parts pipeline (HitEnemy) + its extras
+        void LegacyHit(Enemy e, string n, bool heavy)
+        {
+            string src = PartOfMove(n) ?? n; bool basic = n.StartsWith("light");
+            HitEnemy(e, (DMG.TryGetValue(n, out var dm) ? dm : 15) * SkillDamageScale(n) * LegacyScale(e, src), heavy, src, basic);
+            LegacyHitExtras(e, src, basic);
+            if (n == "light3" && !comboDone) { comboDone = true; OnComboFinish(); }
+        }
+        bool comboDone;
 
         // ---------- actions ----------
         /// double jump (2026-11-09, needs the 도약 관절 leg part from the Z0 elite): F again during the jump arc. Starts from the current arc height with a 1.25x arc,
@@ -174,15 +199,24 @@ namespace Soul
             return true;
         }
         bool PlayMove(string n) { previousTip = null; vfx.ResetTrail(); return anim.Play(n); }
-        float YawToCursor() { var p = cam.Pick(Input.mousePosition, ch.root.position.y); if (!p.HasValue) return ch.yaw; var d = p.Value - ch.root.position; return Mathf.Atan2(d.x, d.z); }
+        /// MCP tests: aim at this point instead of the mouse cursor
+        public Vector3? testAim;
+        float YawToCursor() { if (testAim.HasValue) { var td = testAim.Value - ch.root.position; return Mathf.Atan2(td.x, td.z); } var p = cam.Pick(Input.mousePosition, ch.root.position.y); if (!p.HasValue) return ch.yaw; var d = p.Value - ch.root.position; return Mathf.Atan2(d.x, d.z); }
         void FaceCursor() => anim.pendingYaw = YawToCursor();
         bool CanAct() { var m = anim.move; return !anim.busy || (anim.name.StartsWith("light") && anim.time > (m.Has(m.impact) ? m.impact : 0) + .04f) || anim.name == "heavyCharge"; }
         void Skill(KeyCode code)
         {
+            if (code == KeyCode.Space && ready.TryGetValue(code, out var rr) && rr > realTime && UseDashCharge()) ready.Remove(code);   // 추가 연료통
             if (!player.alive || (ready.TryGetValue(code, out var r) && r > realTime)) return;
             if (code != KeyCode.Space && !CanAct()) return;
             moveOrder = moveTarget; moveTarget = null;
-            if (code == KeyCode.Space) { if (cam.Pick(Input.mousePosition, ch.root.position.y).HasValue) FaceCursor(); PlayMove("dash"); }
+            if (code == KeyCode.Space)
+            {   // WASD: dash along the held move direction; no move input (and the click scheme) = toward the cursor
+                var md = MoveDir(out _);
+                if (md != Vector3.zero) anim.pendingYaw = Mathf.Atan2(md.x, md.z);
+                else if (cam.Pick(Input.mousePosition, ch.root.position.y).HasValue) FaceCursor();
+                PlayMove("dash"); OnDash();
+            }
             else if (code == KeyCode.Q) { FaceCursor(); PlayMove("heavyCharge"); After(.2f, () => { if (anim.name == "heavyCharge") PlayMove("heavy"); }); face.Set("wide", .2f); }
             else if (code == KeyCode.W) { FaceCursor(); PlayMove("wave"); }
             else if (code == KeyCode.E) { FaceCursor(); PlayMove("counter"); }
@@ -191,10 +225,12 @@ namespace Soul
             {   // running jump (2026-11-09): moving toward a target, the jump carries the run forward (~2.6 m) along the
                 // move direction and the walk resumes on landing, so mounds and low ledges are hopped in stride
                 Vector3? run = null;
-                if (moveOrder.HasValue) { var dv = moveOrder.Value - ch.root.position; dv.y = 0; if (dv.magnitude > .6f) run = moveOrder; }
+                var md = MoveDir(out _);   // WASD: the held direction is the run (the walk resumes by itself, the keys are still down)
+                if (md != Vector3.zero) run = ch.root.position + md * 4;
+                else if (moveOrder.HasValue) { var dv = moveOrder.Value - ch.root.position; dv.y = 0; if (dv.magnitude > .6f) run = moveOrder; }
                 if (run.HasValue) { var dv = run.Value - ch.root.position; anim.pendingYaw = Mathf.Atan2(dv.x, dv.z); }
                 PlayMove("jump"); airJumped = false;
-                if (run.HasValue) { anim.rootScale = RUN_JUMP_REACH; resumeMove = run; }
+                if (run.HasValue) { anim.rootScale = RUN_JUMP_REACH; if (!KeyBinds.Wasd) resumeMove = run; }
             }
             ready[code] = realTime + COOLDOWN[code];
         }
@@ -202,7 +238,12 @@ namespace Soul
         {
             if (!player.alive) return;
             moveTarget = null;
-            if (!anim.busy) { FaceCursor(); PlayMove("light1"); return; }
+            if (!anim.busy)
+            {
+                FaceCursor(); PlayMove("light1");
+                if (lightframeReady) { anim.rootScale = 6; lightframeSlash = true; sprintFor = 0; if (P("lightframe") is var lf && lf != null && lf.B1) SpeedBuff(1.3f, 1.2f); }   // 가벼운 프레임: 4 m 돌진 베기
+                return;
+            }
             aimYaw = YawToCursor();
             var before = anim.name; anim.Light(); if (before != anim.name) { previousTip = null; vfx.ResetTrail(); }
         }
@@ -222,21 +263,21 @@ namespace Soul
             if (ShopInput()) return;   // merchant window (SoulGame.Field) eats input while open
             if (SettingsInput()) return;   // Esc settings window (SoulGame.Settings): pauses and eats input while open
             if (SkillInput()) return;   // skill keys / the new-skill key prompt (SoulGame.Skills)
-            ropeHeld = Input.GetMouseButton(0);
-            if (!showMap && Input.GetMouseButtonDown(0)) { var c = cam.Pick(Input.mousePosition, ch.root.position.y); if (c.HasValue) FireRope(c.Value); }
+            // rope arm: right click in WASD, left click in click-move (KeyBinds.RopeButton); hold it through a swing
+            var ropeBtn = KeyBinds.RopeButton;
+            ropeHeld = KeyBinds.Held(ropeBtn);
+            if (!showMap && KeyBinds.Pressed(ropeBtn)) { var c = cam.Pick(Input.mousePosition, ch.root.position.y); if (c.HasValue) FireRope(c.Value); }
             if (RopeHolds) { if (KeyBinds.Down(KeyBinds.Act.Map)) showMap = !showMap; return; }   // on the rope: nothing else
-            // basic controls come from the key map (KeyBinds, Esc settings); Skill() still keys on the legacy codes internally
-            if (KeyBinds.Down(KeyBinds.Act.Attack)) Attack();
-            if (KeyBinds.Down(KeyBinds.Act.Dash)) Skill(KeyCode.Space);   // 스킬 = 파츠: only dash / jump are basic keys
-            if (KeyBinds.Down(KeyBinds.Act.Jump)) { if (!AirJump()) Skill(KeyCode.F); }
-            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            if (shift) { for (int i = Parts.Rope; i <= Parts.LabKeys; i++) if (Input.GetKeyDown(KeyCode.Alpha0 + i)) TogglePart(i); if (Input.GetKeyDown(KeyCode.Alpha8)) TogglePart(Parts.Leap); }   // debug: Shift+1..6 parts, Shift+8 도약 관절
-            else
-            {
-                if (Input.GetKeyDown(KeyCode.Alpha1)) Summon("crawler");
-                if (Input.GetKeyDown(KeyCode.Alpha2)) Summon("warden");
-            }
-            if (Input.GetKeyDown(KeyCode.Alpha0)) enemies.ClearAll();
+            // basic controls come from the key map (KeyBinds, Esc settings); Skill() still keys on its internal ids.
+            // An action bound to a mouse button (WASD: attack = left click) leaves the click to the open map (pod travel, pin).
+            if (BasicDown(KeyBinds.Act.Attack)) Attack();
+            if (BasicDown(KeyBinds.Act.Dash)) Skill(KeyCode.Space);   // 스킬 = 파츠: only dash / jump are basic keys
+            if (BasicDown(KeyBinds.Act.Jump)) { if (!AirJump()) Skill(KeyCode.F); }
+            // debug (2026-11-10: moved off the number keys and Shift, which are slot skills and dash now)
+            if (DebugLayer) { for (int i = Parts.Rope; i <= Parts.LabKeys; i++) if (Input.GetKeyDown(KeyCode.Alpha0 + i)) TogglePart(i); if (Input.GetKeyDown(KeyCode.Alpha8)) TogglePart(Parts.Leap); }   // ` + 1..6 parts, ` + 8 도약 관절
+            if (Input.GetKeyDown(KeyCode.F3)) Summon("crawler");
+            if (Input.GetKeyDown(KeyCode.F4)) Summon("warden");
+            if (Input.GetKeyDown(KeyCode.F5)) enemies.ClearAll();
             if (Input.GetKeyDown(KeyCode.P)) TogglePassive();
             if (Input.GetKeyDown(KeyCode.H)) GetHit();
             if (Input.GetKeyDown(KeyCode.C)) TogglePause();
@@ -260,8 +301,13 @@ namespace Soul
                 if (r.Contains(mp)) MapPinClick(r, mp);
             }
             float wheel = Input.mouseScrollDelta.y; if (Mathf.Abs(wheel) > .01f) cam.ZoomBy(-Mathf.Sign(wheel) * .08f);
-            if (!showMap && Input.GetMouseButton(1) && player.alive) { var p = PickFloor(Input.mousePosition) ?? cam.Pick(Input.mousePosition, ch.root.position.y); if (p.HasValue) { if (Input.GetMouseButtonDown(1)) MoveMarkerClick(p.Value); moveTarget = p; } }
+            // click-move scheme only: right click (hold) orders a move to the floor point under the cursor
+            if (!KeyBinds.Wasd && !showMap && KeyBinds.Held(KeyBinds.ClickMoveButton) && player.alive) { var p = PickFloor(Input.mousePosition) ?? cam.Pick(Input.mousePosition, ch.root.position.y); if (p.HasValue) { if (KeyBinds.Pressed(KeyBinds.ClickMoveButton)) MoveMarkerClick(p.Value); moveTarget = p; } }
         }
+        /// a basic action was pressed this frame; one bound to a mouse button does not fire while the map is open
+        bool BasicDown(KeyBinds.Act a) => KeyBinds.Down(a) && !(showMap && KeyBinds.Get(a) >= KeyCode.Mouse0);
+        /// debug layer: hold ` (backquote) and press a number (parts, grudge drop). Slot skills on the same numbers stay quiet.
+        static bool DebugLayer => Input.GetKey(KeyCode.BackQuote);
 
         // ---------- frame ----------
         void Update()
@@ -276,13 +322,7 @@ namespace Soul
             }
             for (int i = timers.Count - 1; i >= 0; i--) if (timers[i].at <= realTime) { var fn = timers[i].fn; timers.RemoveAt(i); fn(); }
             float dt = paused ? 1 / 60f : realDt * timeScale; if (hitStop > 0) { hitStop = Mathf.Max(0, hitStop - realDt); dt = 0; }
-            var input = Vector3.zero;
-            if (resumeMove.HasValue && !anim.busy) { if (!moveTarget.HasValue) moveTarget = resumeMove; resumeMove = null; }
-            if (moveTarget.HasValue && !anim.busy)
-            {
-                var d = moveTarget.Value - ch.root.position; d.y = 0; float dist = d.magnitude;
-                if (dist < .12f) moveTarget = null; else input = d.normalized * Mathf.Min(1, dist / .45f + .25f);
-            }
+            var input = FrameInput();
             float remaining = dt;
             do { float step = Mathf.Min(remaining, 1 / 120f); WorldStep(step, input); remaining -= step; } while (remaining > 1e-7f);
             FrameTail(realDt);
@@ -336,22 +376,24 @@ namespace Soul
         {
             var before = ch.root.position;
             WaterStep(step);
+            anim.moveRate = MoveRate(anim.name);   // 공격 속도 (SoulGame.PartsPassive)
             anim.Update(step, RopeHolds ? Vector3.zero : input, true);
             if (RopeTravel) RopeMove(step, before); else Vertical(step, before);
             RopeTick(step); RopeArmPose();
-            if (anim.name != lastName) { previousTip = null; lastName = anim.name; hitSet.Clear(); pillarHitSet.Clear(); }
+            if (anim.name != lastName) { previousTip = null; lastName = anim.name; hitSet.Clear(); pillarHitSet.Clear(); comboDone = false; }
             var m = anim.move; bool active = m?.active != null && anim.time >= m.active[0] && anim.time <= m.active[1];
-            if (active && !m.parry) { BladeHits(m); if (anim.time >= (m.Has(m.impact) ? m.impact : m.active[0]) - .02f) AreaHits(m); } else if (!active) previousTip = null;
+            if (active && !m.parry && !PartMove(anim.name)) { BladeHits(m); if (anim.time >= (m.Has(m.impact) ? m.impact : m.active[0]) - .02f) AreaHits(m); } else if (!active) previousTip = null;
             foreach (var w in vfx.waves)
             {
                 var c = w.pos; PillarWave(w);
                 foreach (var e in enemies.list)
                     if (e.Hittable &&!w.hitSet.Contains(e) && Mathf.Abs(e.pos.y - c.y + .35f) < 1.8f && Mathf.Sqrt((c.x - e.pos.x) * (c.x - e.pos.x) + (c.z - e.pos.z) * (c.z - e.pos.z)) < WAVE_R + e.radius * .5f)
-                    { w.hitSet.Add(e); e.Damage(30, ch.root.position, true); vfx.Burst(e.Center(), 24, 1.2f); cam.Shake(.06f); }
+                    { w.hitSet.Add(e); HitEnemy(e, 30 * SkillDamageScale("wave") * LegacyScale(e, "wave") * w.scale, true, "wave"); LegacyHitExtras(e, "wave", false); vfx.Burst(e.Center(), 24, 1.2f); cam.Shake(.06f); }
                 breakables.Hit(Sim.FlatY(c, .2f), Sim.FlatY(c, 1.2f), .9f, c);
             }
             player.pos = ch.root.position;
-            enemies.Update(step, player); breakables.Update(step); pickups.Update(step, ch.root.position);
+            enemies.Update(step * WorldSlow, player); breakables.Update(step); pickups.Update(step, ch.root.position);
+            PartsUpdate(step); ActiveTick(step);   // slot parts: statuses, fields, heat, minions (SoulGame.Parts*)
             if (step > 0)
             {
                 ghostClock -= step;
@@ -384,6 +426,7 @@ namespace Soul
             LoreUpdate(realDt);   // 생존자 기록 (SoulGame.Lore)
             MoveMarkerUpdate(realDt);   // right-click destination (SoulGame.Move)
             GuideUpdate(realDt);   // 경로 유도: explore camera, wisps, map pin (SoulGame.Guide)
+            CamFollowUpdate(realDt);   // WASD: the view eases behind a sustained forward run (SoulGame.Move, FollowCam.Follow)
             cam.Update(realDt, ch.root.position);
         }
 
@@ -412,7 +455,16 @@ namespace Soul
             return sb.ToString();
         }
         /// Synchronous simulation (seconds of 120 Hz substeps); action: "attack", "Q", "W", "E", "R", "Space", "F", "summon:crawler".
-        public void Simulate(float seconds, Vector3 input = default) { int n = Mathf.RoundToInt(seconds * 120); fastTest = true; for (int i = 0; i < n; i++) WorldStep(1 / 120f, input); fastTest = false; secondary.Reset(); ch.Sync(); }   // cloth skipped (7 ms / substep)
+        public void Simulate(float seconds, Vector3 input = default, bool clock = false)
+        {
+            int n = Mathf.RoundToInt(seconds * 120); fastTest = true;
+            for (int i = 0; i < n; i++)
+            {
+                WorldStep(1 / 120f, input);
+                if (clock) { realTime += 1 / 120f; for (int k = timers.Count - 1; k >= 0; k--) if (timers[k].at <= realTime) { var fn = timers[k].fn; timers.RemoveAt(k); fn(); } }   // parts tests: game clock + timers too
+            }
+            fastTest = false; secondary.Reset(); ch.Sync();
+        }   // cloth skipped (7 ms / substep)
         /// Walk toward `target` (sim) for up to `seconds`; returns a trace "x,z,y" every 0.25 s (elevation tests).
         public string WalkTest(Vector3 target, float seconds, float jumpAtY = -1)
         {
@@ -489,7 +541,7 @@ namespace Soul
                 {   // generated slot frame + icon; cooldown darkens the icon from the top
                     var inner = new Rect(r.x + r.width * .14f, r.y + r.height * .14f, r.width * .72f, r.height * .72f);
                     GUI.color = new Color(.02f, .03f, .04f, .85f); GUI.DrawTexture(inner, white);
-                    GUI.color = Color.white; UiArt.Icon(inner, slots[i].icon, .08f);
+                    GUI.color = Color.white; if (slots[i].icon < 0) PartIconArt(inner, -slots[i].icon - 1); else UiArt.Icon(inner, slots[i].icon, .08f);
                     if (slots[i].cdLeft > 0) { GUI.color = new Color(0, 0, 0, .65f); GUI.DrawTexture(new Rect(inner.x, inner.y, inner.width, inner.height * slots[i].cdLeft), white); }
                     GUI.color = Color.white; UiArt.Piece(r, UiArt.Slot);
                     GUI.Label(new Rect(r.x, r.yMax - 8, r.width, 18), slots[i].key, keyStyle);
@@ -500,13 +552,14 @@ namespace Soul
                 GUI.color = Color.white; GUI.Label(new Rect(r.x, r.y + 4, r.width, 22), slots[i].key, keyStyle); GUI.Label(new Rect(r.x, r.y + 28, r.width, 20), slots[i].label, keyStyle);
             }
             GUI.color = Color.white;
-            string hint = realTime < cueUntil ? cueText : $"우클릭 이동 · {KeyBinds.Name(KeyBinds.Act.Attack)} 공격 · {KeyBinds.Name(KeyBinds.Act.Dash)} 대쉬 · {KeyBinds.Name(KeyBinds.Act.Jump)} 점프 · Tab 스킬 · {KeyBinds.Name(KeyBinds.Act.Rest)} 휴식 · {KeyBinds.Name(KeyBinds.Act.Map)} 지도 · 휠 줌 · Esc 설정 · 1/2 소환 · 0 제거 · P 허수아비 · C 정지";
+            string moveHint = KeyBinds.Wasd ? "WASD 이동" : "우클릭 이동", ropeHint = KeyBinds.KeyName(KeyBinds.RopeButton) + " 로프";
+            string hint = realTime < cueUntil ? cueText : $"{moveHint} · {KeyBinds.Name(KeyBinds.Act.Attack)} 공격 · {ropeHint} · {KeyBinds.Name(KeyBinds.Act.Dash)} 대쉬 · {KeyBinds.Name(KeyBinds.Act.Jump)} 점프 · {KeyBinds.Name(KeyBinds.Act.Growth)} 스킬 · {KeyBinds.Name(KeyBinds.Act.Rest)} 휴식 · {KeyBinds.Name(KeyBinds.Act.Map)} 지도 · 휠 줌 · Esc 설정 · F3/F4 소환 · F5 제거 · P 허수아비 · C 정지";
             GUI.Label(new Rect(0, H - 104, W, 24), hint, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             // summon panel
             float bx = W - 170;
-            if (GUI.Button(new Rect(bx, 20, 150, 26), "1  하운드 소환")) Summon("crawler");
-            if (GUI.Button(new Rect(bx, 50, 150, 26), "2  워든 소환")) Summon("warden");
-            if (GUI.Button(new Rect(bx, 80, 150, 26), "0  전부 제거")) enemies.ClearAll();
+            if (GUI.Button(new Rect(bx, 20, 150, 26), "F3  하운드 소환")) Summon("crawler");
+            if (GUI.Button(new Rect(bx, 50, 150, 26), "F4  워든 소환")) Summon("warden");
+            if (GUI.Button(new Rect(bx, 80, 150, 26), "F5  전부 제거")) enemies.ClearAll();
             if (GUI.Button(new Rect(bx, 110, 150, 26), (enemies.passive ? "● " : "") + "P  허수아비 모드")) TogglePassive();
             if (paused) GUI.Label(new Rect(0, H * .18f, W, 40), "PAUSED   ·   C 다시 재생 · . 한 프레임 진행", big);
             // gate hint near a link site: debug only (F1). In play the terrain itself says what is needed.
@@ -520,7 +573,7 @@ namespace Soul
                 GUI.Label(new Rect(0, H * .68f, W, 30), $"[{what}]  {site.link.note}", new GUIStyle(big) { fontSize = 18 });
                 GUI.color = Color.white; GUI.Label(new Rect(0, H * .68f + 28, W, 20), to, new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
             }
-            if (debugHud) GUI.Label(new Rect(20, 102, 500, 20), $"파츠: {Parts.Owned()}   ·   M 지도 · Shift+1~6 파츠 토글 · F1 디버그 표시", small);
+            if (debugHud) GUI.Label(new Rect(20, 102, 500, 20), $"파츠: {Parts.Owned()}   ·   {KeyBinds.Name(KeyBinds.Act.Map)} 지도 · ` + 1~6 파츠 토글 (` + 8 도약 관절) · F1 디버그 표시", small);
             ZoneGUI(W, H); EcologyGUI(W, H); SubtitleGUI(W, H); FieldGUI(W, H); RopeGUI(); GrudgeGUI(W, H); SkillsGUI(W, H);
             PinGUI(W, H);
             if (showMap) DrawMap();
@@ -565,7 +618,7 @@ namespace Soul
             DrawMapZone(r, pp); DrawMapPin(r);
             GUI.color = new Color(.3f, .85f, 1f); GUI.DrawTexture(new Rect(pp.x - 5, pp.y - 5, 10, 10), white);
             GUI.color = Color.white;
-            GUI.Label(new Rect(r.x, r.yMax + 4, r.width, 22), debugHud ? "M 닫기 · 포드 클릭 = 빠른 이동 · 우클릭 = 핀 · Shift+클릭 = 순간이동 · 색 점 = 파츠 게이트 · 회색 = 통로/낙하 · 빨강 = 보스" : "M 닫기 · 발견한 포드를 누르면 빠른 이동 · 우클릭으로 핀 꽂기", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
+            GUI.Label(new Rect(r.x, r.yMax + 4, r.width, 22), debugHud ? "M 닫기 · 포드 클릭 = 빠른 이동 · 우클릭 = 핀 · Ctrl+클릭 = 순간이동 · 색 점 = 파츠 게이트 · 회색 = 통로/낙하 · 빨강 = 보스" : "M 닫기 · 발견한 포드를 누르면 빠른 이동 · 우클릭으로 핀 꽂기", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
         }
     }
 }

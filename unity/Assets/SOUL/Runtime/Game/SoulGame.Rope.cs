@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace Soul
 {
-    // 로프 팔 (left-arm grapple, stage 4). Left click fires toward the cursor; what it does depends on
+    // 로프 팔 (left-arm grapple, stage 4). The rope button (KeyBinds.RopeButton: right click in WASD, left click in
+    // click-move) fires toward the cursor; what it does depends on
     // what is under / along the cursor (RopeAim):
     //   small enemy  -> yank it in front of you + stagger      big enemy -> zip to it and open with a slash
     //   pickup       -> snatch it back                         swing hook -> pendulum arc across the gap
@@ -259,7 +260,7 @@ namespace Soul
             GUI.color = cd ? new Color(.6f, .6f, .6f, .8f) : MeshBuilder.Hex(ZoneGates.PartHex[Parts.Rope]);
             foreach (var (dx, dy) in new[] { (-1, -1), (1, -1), (-1, 1), (1, 1) })
             { GUI.DrawTexture(new Rect(x + dx * r - (dx < 0 ? 0 : 6), y + dy * r - (dy < 0 ? 0 : 2), 6, 2), white); GUI.DrawTexture(new Rect(x + dx * r - (dx < 0 ? 0 : 2), y + dy * r - (dy < 0 ? 0 : 6), 2, 6), white); }
-            if (debugHud) GUI.Label(new Rect(x + 16, y - 9, 160, 20), "좌클릭 · " + a.Label, small);
+            if (debugHud) GUI.Label(new Rect(x + 16, y - 9, 160, 20), KeyBinds.KeyName(KeyBinds.RopeButton) + " · " + a.Label, small);
             GUI.color = Color.white;
         }
     }
